@@ -22,6 +22,8 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public async Task DisposeAsync() => await _container.DisposeAsync();
 
+    public string ConnectionString => _container.GetConnectionString();
+
     public WebhookDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<WebhookDbContext>()

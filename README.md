@@ -51,6 +51,38 @@ Then open `/health`.
 Persistence tests start their own PostgreSQL container with Testcontainers, so
 Docker must be running when you run `dotnet test`.
 
+## API (v0.1, work in progress)
+
+Authentication is not implemented yet. For now the tenant is passed in an
+`X-Tenant-Id` header (a GUID). See [ADR 0003](docs/decisions/0003-tenant-header-and-idempotency.md).
+
+Register a receiver. The signing secret is returned once:
+
+```bash
+curl -X POST http://localhost:5000/endpoints \
+  -H "X-Tenant-Id: 11111111-1111-1111-1111-111111111111" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/hook"}'
+```
+
+Send an event. Repeating the same `Idempotency-Key` never creates a second event:
+
+```bash
+curl -X POST http://localhost:5000/events \
+  -H "X-Tenant-Id: 11111111-1111-1111-1111-111111111111" \
+  -H "Idempotency-Key: order-42" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"order.created","payload":{"id":42}}'
+```
+
+Events are stored, but nothing is delivered yet: the delivery worker is the next step.
+
+### Known limitations
+
+- Tenant header is not secure (temporary).
+- No SSRF protection on endpoint URLs yet.
+- No event-type filtering per endpoint.
+
 ### Database migrations
 
 The EF Core CLI is a local tool, restore it once:
