@@ -48,6 +48,23 @@ dotnet run --project src/WebhookService.Api
 
 Then open `/health`.
 
+Persistence tests start their own PostgreSQL container with Testcontainers, so
+Docker must be running when you run `dotnet test`.
+
+### Database migrations
+
+The EF Core CLI is a local tool, restore it once:
+
+```bash
+dotnet tool restore
+```
+
+Create a migration after changing the model:
+
+```bash
+dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Infrastructure --output-dir Persistence/Migrations
+```
+
 ## Roadmap
 
 - [ ] v0.1 events, endpoints, signed delivery, retries, tests

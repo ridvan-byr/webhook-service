@@ -4,6 +4,17 @@
     <ProjectReference Include="..\WebhookService.Core\WebhookService.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.33" />
+    <!-- Pinned explicitly: Npgsql 8.0.11 asks for Relational 8.0.11, which would clash with the 8.0.33 packages. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.33" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.33">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
