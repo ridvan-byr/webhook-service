@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-WebhookService.Worker-ae80a9df-98d6-4dc2-8ebc-6dcd63257ead</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WebhookService.Core\WebhookService.Core.csproj" />
+    <ProjectReference Include="..\WebhookService.Infrastructure\WebhookService.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
