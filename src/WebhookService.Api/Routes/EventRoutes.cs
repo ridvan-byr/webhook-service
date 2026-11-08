@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using WebhookService.Api.Contracts;
 using WebhookService.Api.Http;
+using WebhookService.Infrastructure.Persistence;
 using WebhookService.Infrastructure.Services;
 
 namespace WebhookService.Api.Routes;
@@ -14,6 +16,44 @@ internal static class EventRoutes
     public static void MapEventRoutes(this IEndpointRouteBuilder app)
     {
         app.MapPost("/events", CreateAsync).WithTags("Events").WithName("CreateEvent");
+        app.MapGet("/events/{id:guid}", GetAsync).WithTags("Events").WithName("GetEvent");
+    }
+
+    private static async Task<IResult> GetAsync(
+        Guid id,
+        HttpRequest request,
+        WebhookDbContext db,
+        CancellationToken ct)
+    {
+        if (!TenantHeader.TryRead(request, out var tenantId))
+        {
+            return Results.Problem(
+                title: "Missing or invalid tenant.",
+                detail: $"Send a valid GUID in the {TenantHeader.Name} header.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var ev = await db.Events.AsNoTracking()
+            .SingleOrDefaultAsync(e => e.Id == id && e.TenantId == tenantId, ct);
+        if (ev is null)
+        {
+            return Results.NotFound();
+        }
+
+        var deliveries = await db.Deliveries.AsNoTracking()
+            .Where(d => d.EventId == id)
+            .OrderBy(d => d.CreatedAt)
+            .ThenBy(d => d.Id)
+            .ToListAsync(ct);
+
+        using var payload = JsonDocument.Parse(ev.PayloadJson);
+
+        return Results.Ok(new EventDetailResponse(
+            ev.Id,
+            ev.Type,
+            ev.CreatedAt,
+            payload.RootElement.Clone(),
+            deliveries.Select(DeliveryRoutes.ToSummary).ToList()));
     }
 
     private static async Task<IResult> CreateAsync(
