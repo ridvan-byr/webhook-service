@@ -58,8 +58,7 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
     .AllowAnonymous()
-    .WithName("Health")
-    .WithOpenApi();
+    .WithName("Health");
 
 app.MapAccountRoutes();
 app.MapEndpointRoutes();

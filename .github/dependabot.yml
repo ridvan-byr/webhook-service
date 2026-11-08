@@ -5,10 +5,35 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # One pull request per week is easier to review than one per package.
     groups:
-      nuget-updates:
-        patterns: ["*"]
+      # These packages are versioned together with the .NET platform: EF Core, Npgsql's EF provider,
+      # the Microsoft.Extensions and ASP.NET Core packages and the dotnet-ef tool. They have to move
+      # together, so they share one pull request. Split up, a pull request such as the Npgsql one
+      # would fail on its own until the EF Core one is merged.
+      dotnet-platform:
+        patterns:
+          - "Microsoft.EntityFrameworkCore*"
+          - "Npgsql.EntityFrameworkCore.PostgreSQL"
+          - "Microsoft.Extensions.*"
+          - "Microsoft.AspNetCore.*"
+          - "dotnet-ef"
+
+      # Low-risk updates of everything else share one weekly pull request.
+      # Major versions of these packages are NOT grouped: each one arrives as its own pull request,
+      # so one incompatible package cannot block the others (this is what happened when a single
+      # grouped pull request held thirteen updates and Swashbuckle 10 broke all of them).
+      nuget-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "Microsoft.EntityFrameworkCore*"
+          - "Npgsql.EntityFrameworkCore.PostgreSQL"
+          - "Microsoft.Extensions.*"
+          - "Microsoft.AspNetCore.*"
+          - "dotnet-ef"
 
   - package-ecosystem: github-actions
     directory: /
