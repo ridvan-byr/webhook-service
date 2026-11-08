@@ -132,11 +132,29 @@ Every request to a receiver carries these headers, so the receiver can verify it
 
 Delivery is at-least-once. See [ADR 0004](docs/decisions/0004-delivery-worker.md).
 
+### Where webhooks may be sent
+
+Tenants choose the destination URL, so the service refuses to contact non-public addresses
+(localhost, private networks, the cloud metadata address, ...). The check happens when the worker
+connects, so it also holds against names that change their DNS answer later
+([ADR 0006](docs/decisions/0006-ssrf-protection.md)). By default only `https` URLs are accepted.
+
+Two settings control this, read by both the API and the worker. The defaults are the safe ones; the
+Development settings relax them so that a receiver on `localhost` works. **Never enable them for a public
+deployment:**
+
+```json
+"Security": { "AllowPrivateNetworks": false, "RequireHttps": true }
+```
+
+Run the worker in a network that cannot reach your internal services at all. The application check is
+the second line of defence, not the first.
+
 ### Known limitations
 
 - No rate limiting, so keys could be guessed by brute force (the 256-bit secret makes that
   impractical, but failed attempts are not throttled or logged yet).
-- No SSRF protection on endpoint URLs yet.
+- A public address can still belong to the operator's own infrastructure, and ports are not restricted.
 - No event-type filtering per endpoint.
 
 ### Database migrations

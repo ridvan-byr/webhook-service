@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.Extensions.Options;
 using WebhookService.Core.Signing;
+using WebhookService.Infrastructure.Security;
 
 namespace WebhookService.Infrastructure.Dispatch;
 
@@ -66,10 +67,30 @@ public sealed class WebhookSender
             // Our own timeout fired (not a shutdown request).
             return new SendResult(null, null, $"Timed out after {_timeout.TotalSeconds:0.#} s.", stopwatch.ElapsedMilliseconds);
         }
+        catch (HttpRequestException ex) when (IsBlockedDestination(ex))
+        {
+            // Said in general terms on purpose: this text is shown to the tenant, and it must not
+            // reveal which internal address a name resolved to.
+            return new SendResult(null, null, "Destination is not a public address and was not contacted.", stopwatch.ElapsedMilliseconds);
+        }
         catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
             return new SendResult(null, null, $"{ex.GetType().Name}: {ex.Message}", stopwatch.ElapsedMilliseconds);
         }
+    }
+
+    /// <summary>The connector's exception arrives wrapped in an HttpRequestException, sometimes more than once.</summary>
+    private static bool IsBlockedDestination(Exception ex)
+    {
+        for (var inner = ex; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is BlockedDestinationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static async Task<string?> ReadSnippetAsync(HttpResponseMessage response, CancellationToken ct)

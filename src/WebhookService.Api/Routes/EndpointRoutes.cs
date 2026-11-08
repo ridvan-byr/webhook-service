@@ -1,9 +1,12 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using WebhookService.Api.Contracts;
 using WebhookService.Api.Security;
+using WebhookService.Core.Security;
 using WebhookService.Infrastructure.Persistence;
+using WebhookService.Infrastructure.Security;
 using DomainEndpoint = WebhookService.Core.Domain.Endpoint;
 
 namespace WebhookService.Api.Routes;
@@ -24,13 +27,19 @@ internal static class EndpointRoutes
         CreateEndpointRequest body,
         WebhookDbContext db,
         TimeProvider time,
+        IOptions<NetworkSecurityOptions> security,
         CancellationToken ct)
     {
-        if (!Uri.TryCreate(body.Url, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
+        // An early, readable error for obviously wrong URLs. The real protection against reaching
+        // internal networks is the check made when the worker connects (SafeConnector).
+        var (url, error) = EndpointUrlValidator.Validate(
+            body.Url, security.Value.RequireHttps, security.Value.AllowPrivateNetworks);
+
+        if (url is null)
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>
             {
-                ["url"] = ["Must be an absolute http or https URL."],
+                ["url"] = [error!],
             });
         }
 
