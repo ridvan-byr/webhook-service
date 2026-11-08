@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using WebhookService.Api.Routes;
 using WebhookService.Api.Security;
 using WebhookService.Infrastructure.Persistence;
+using WebhookService.Infrastructure.Security;
 using WebhookService.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,6 +24,8 @@ builder.Services.AddDbContext<WebhookDbContext>((serviceProvider, options) =>
 
     options.UseNpgsql(connectionString);
 });
+
+builder.Services.Configure<NetworkSecurityOptions>(builder.Configuration.GetSection(NetworkSecurityOptions.SectionName));
 
 builder.Services.AddScoped<EventIngestionService>();
 builder.Services.AddScoped<ApiKeyService>();

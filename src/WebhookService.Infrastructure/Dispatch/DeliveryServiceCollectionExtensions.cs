@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using WebhookService.Infrastructure.Persistence;
+using WebhookService.Infrastructure.Security;
 
 namespace WebhookService.Infrastructure.Dispatch;
 
@@ -26,12 +27,24 @@ public static class DeliveryServiceCollectionExtensions
             options.UseNpgsql(connectionString);
         });
 
+        services.Configure<NetworkSecurityOptions>(configuration.GetSection(NetworkSecurityOptions.SectionName));
+        services.TryAddSingleton<IHostResolver, DnsHostResolver>();
+        services.AddSingleton<SafeConnector>();
+
         services.AddHttpClient<WebhookSender>()
-            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+            .ConfigurePrimaryHttpMessageHandler(serviceProvider => new SocketsHttpHandler
             {
                 // A receiver must not be able to redirect us to another address.
                 AllowAutoRedirect = false,
+
+                // Never go through a proxy configured in the environment: the connection must go to the
+                // address that SafeConnector checked, not to whatever proxy happens to be set.
+                UseProxy = false,
+
                 ConnectTimeout = TimeSpan.FromSeconds(5),
+
+                // Every connection is opened by the connector, which refuses non-public addresses.
+                ConnectCallback = serviceProvider.GetRequiredService<SafeConnector>().ConnectAsync,
             });
 
         services.AddSingleton<DeliveryProcessor>();

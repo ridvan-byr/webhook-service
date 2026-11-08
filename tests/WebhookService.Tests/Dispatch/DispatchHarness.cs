@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using WebhookService.Core.Domain;
 using WebhookService.Infrastructure.Dispatch;
 using WebhookService.Infrastructure.Persistence;
+using WebhookService.Infrastructure.Security;
 using WebhookService.Tests.Persistence;
 
 namespace WebhookService.Tests.Dispatch;
@@ -18,11 +19,20 @@ public sealed class DispatchHarness : IAsyncDisposable
 {
     private readonly ServiceProvider _services;
     private readonly string _connectionString;
+    private readonly Action<NetworkSecurityOptions>? _security;
+    private readonly IHostResolver? _resolver;
 
-    private DispatchHarness(string connectionString, TestClock clock, Action<DeliveryOptions>? configure)
+    private DispatchHarness(
+        string connectionString,
+        TestClock clock,
+        Action<DeliveryOptions>? configure,
+        Action<NetworkSecurityOptions>? security,
+        IHostResolver? resolver)
     {
         _connectionString = connectionString;
         Clock = clock;
+        _security = security;
+        _resolver = resolver;
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Default"] = connectionString })
@@ -33,7 +43,20 @@ public sealed class DispatchHarness : IAsyncDisposable
         services.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
         services.AddSingleton<TimeProvider>(clock);
         services.AddSingleton<IJitter, FixedJitter>();
+        if (resolver is not null)
+        {
+            services.AddSingleton(resolver);
+        }
+
         services.AddWebhookDelivery(configuration);
+        services.Configure<NetworkSecurityOptions>(o =>
+        {
+            // The test receiver lives on 127.0.0.1, so by default private networks are allowed here.
+            // Security tests switch this off.
+            o.AllowPrivateNetworks = true;
+            o.RequireHttps = false;
+            security?.Invoke(o);
+        });
         services.Configure<DeliveryOptions>(o =>
         {
             o.MaxAttempts = 3;
@@ -56,14 +79,18 @@ public sealed class DispatchHarness : IAsyncDisposable
 
     private Action<DeliveryOptions>? Configure { get; }
 
-    public static async Task<DispatchHarness> CreateAsync(PostgresFixture postgres, Action<DeliveryOptions>? configure = null)
+    public static async Task<DispatchHarness> CreateAsync(
+        PostgresFixture postgres,
+        Action<DeliveryOptions>? configure = null,
+        Action<NetworkSecurityOptions>? security = null,
+        IHostResolver? resolver = null)
     {
         var connectionString = await postgres.CreateIsolatedDatabaseAsync();
-        return new DispatchHarness(connectionString, new TestClock(), configure);
+        return new DispatchHarness(connectionString, new TestClock(), configure, security, resolver);
     }
 
     /// <summary>Another worker on the same database and the same clock, to test several workers at once.</summary>
-    public DispatchHarness CreateSecondWorker() => new(_connectionString, Clock, Configure);
+    public DispatchHarness CreateSecondWorker() => new(_connectionString, Clock, Configure, _security, _resolver);
 
     public WebhookDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<WebhookDbContext>().UseNpgsql(_connectionString).Options);
