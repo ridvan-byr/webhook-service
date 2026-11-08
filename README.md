@@ -75,7 +75,22 @@ curl -X POST http://localhost:5000/events \
   -d '{"type":"order.created","payload":{"id":42}}'
 ```
 
-Events are stored, but nothing is delivered yet: the delivery worker is the next step.
+Run the delivery worker in a second terminal (the API applies the database migrations in
+Development, so start it first):
+
+```bash
+dotnet run --project src/WebhookService.Worker
+```
+
+Every request to a receiver carries these headers, so the receiver can verify it:
+
+| Header | Meaning |
+|---|---|
+| `Webhook-Id` | Event id. Identical on every retry, use it to detect duplicates |
+| `Webhook-Timestamp` | Unix seconds when the attempt was sent |
+| `Webhook-Signature` | `v1,` + base64 HMAC-SHA256 of `{id}.{timestamp}.{body}` using the endpoint secret |
+
+Delivery is at-least-once. See [ADR 0004](docs/decisions/0004-delivery-worker.md).
 
 ### Known limitations
 
@@ -99,7 +114,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 
 ## Roadmap
 
-- [ ] v0.1 events, endpoints, signed delivery, retries, tests
+- [ ] v0.1 events, endpoints, signed delivery, retries, tests (done), manual re-send of dead deliveries (API still missing)
 - [ ] v0.2 Next.js dashboard, API-key auth, CI
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
