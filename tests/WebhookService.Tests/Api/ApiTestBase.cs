@@ -1,13 +1,23 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using WebhookService.Api.Contracts;
+using WebhookService.Core.Domain;
+using WebhookService.Infrastructure.Services;
 using WebhookService.Tests.Persistence;
 
 namespace WebhookService.Tests.Api;
 
-/// <summary>Shared helpers. Every test uses its own tenant, so tests never see each other's data.</summary>
+/// <summary>
+/// Shared helpers. Every test uses its own tenant with its own real API key, so tests never see
+/// each other's data and every request goes through the real authentication.
+/// </summary>
 public abstract class ApiTestBase : IDisposable
 {
+    public const string AdminKey = "test-admin-key";
+
+    private readonly Dictionary<Guid, string> _keys = new();
+
     protected ApiTestBase(PostgresFixture postgres)
     {
         Postgres = postgres;
@@ -30,13 +40,17 @@ public abstract class ApiTestBase : IDisposable
         Factory.Dispose();
     }
 
+    /// <summary>
+    /// Builds a request signed in as <paramref name="tenant"/> (default: this test's tenant).
+    /// Pass <see cref="Guid.Empty"/> for a request without any credentials.
+    /// </summary>
     protected HttpRequestMessage Request(HttpMethod method, string url, string? json = null, Guid? tenant = null)
     {
         var message = new HttpRequestMessage(method, url);
         var tenantId = tenant ?? Tenant;
         if (tenantId != Guid.Empty)
         {
-            message.Headers.Add("X-Tenant-Id", tenantId.ToString());
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", KeyFor(tenantId));
         }
 
         if (json is not null)
@@ -45,6 +59,27 @@ public abstract class ApiTestBase : IDisposable
         }
 
         return message;
+    }
+
+    /// <summary>Creates the tenant and a real API key for it the first time it is needed.</summary>
+    protected string KeyFor(Guid tenantId)
+    {
+        lock (_keys)
+        {
+            if (!_keys.TryGetValue(tenantId, out var key))
+            {
+                using var db = Postgres.CreateContext();
+                db.Tenants.Add(Core.Domain.Tenant.Create(tenantId, "test tenant", DateTimeOffset.UtcNow));
+
+                key = new ApiKeyService(db, TimeProvider.System)
+                    .IssueKeyAsync(tenantId, "test", CancellationToken.None)
+                    .GetAwaiter().GetResult().PlainText;
+
+                _keys[tenantId] = key;
+            }
+
+            return key;
+        }
     }
 
     protected async Task<CreatedEndpointResponse> CreateEndpointAsync(Guid? tenant = null, string url = "https://example.com/hook")

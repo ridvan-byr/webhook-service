@@ -22,8 +22,35 @@ public sealed class WebhookDbContext : DbContext
 
     public DbSet<DeliveryAttempt> DeliveryAttempts => Set<DeliveryAttempt>();
 
+    public DbSet<Tenant> Tenants => Set<Tenant>();
+
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Tenant>(e =>
+        {
+            e.ToTable("tenants");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+        });
+
+        modelBuilder.Entity<ApiKey>(e =>
+        {
+            e.ToTable("api_keys");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Prefix).HasMaxLength(12).IsRequired();
+            e.Property(x => x.KeyHash).HasMaxLength(32).IsRequired();
+            e.Ignore(x => x.IsRevoked);
+
+            // Every request looks the key up by its prefix, so the prefix must be unique and indexed.
+            e.HasIndex(x => x.Prefix).IsUnique();
+            e.HasIndex(x => x.TenantId);
+
+            e.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<Event>(e =>
         {
             e.ToTable("events");

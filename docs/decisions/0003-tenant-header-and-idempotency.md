@@ -1,6 +1,7 @@
 # 0003 - Temporary tenant header and idempotency rules
 
-Status: accepted (tenant header is temporary)
+Status: accepted. The tenant header part is superseded by
+[0005](0005-api-key-authentication.md); the idempotency rules still apply.
 
 ## Context
 

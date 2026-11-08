@@ -188,13 +188,13 @@ public class DeliveryApiTests : ApiTestBase
     }
 
     [Fact]
-    public async Task Unknown_ids_and_missing_tenants_are_handled()
+    public async Task Unknown_ids_are_not_found_and_missing_credentials_are_rejected()
     {
         var unknown = await Client.SendAsync(Request(HttpMethod.Get, $"/deliveries/{Guid.NewGuid()}"));
-        var noTenant = await Client.SendAsync(Request(HttpMethod.Get, "/deliveries", tenant: Guid.Empty));
+        var noCredentials = await Client.SendAsync(Request(HttpMethod.Get, "/deliveries", tenant: Guid.Empty));
 
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, noTenant.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, noCredentials.StatusCode);
     }
 
     private async Task<Guid> SendEventAsync(string json, Guid? tenant = null)

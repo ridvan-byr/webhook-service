@@ -170,11 +170,11 @@ public class EventApiTests : ApiTestBase
     }
 
     [Fact]
-    public async Task A_missing_tenant_header_is_rejected()
+    public async Task A_request_without_credentials_is_rejected()
     {
         var response = await PostEventAsync(SimpleEvent, tenant: Guid.Empty);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

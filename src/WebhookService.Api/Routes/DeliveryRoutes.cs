@@ -1,6 +1,7 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using WebhookService.Api.Contracts;
-using WebhookService.Api.Http;
+using WebhookService.Api.Security;
 using WebhookService.Core.Domain;
 using WebhookService.Infrastructure.Persistence;
 
@@ -21,16 +22,13 @@ internal static class DeliveryRoutes
     }
 
     private static async Task<IResult> ListAsync(
-        HttpRequest request,
+        ClaimsPrincipal user,
         WebhookDbContext db,
         string? status,
         int? limit,
         CancellationToken ct)
     {
-        if (!TenantHeader.TryRead(request, out var tenantId))
-        {
-            return MissingTenant();
-        }
+        var tenantId = user.TenantId();
 
         DeliveryStatus? statusFilter = null;
         if (!string.IsNullOrWhiteSpace(status))
@@ -65,14 +63,11 @@ internal static class DeliveryRoutes
 
     private static async Task<IResult> GetAsync(
         Guid id,
-        HttpRequest request,
+        ClaimsPrincipal user,
         WebhookDbContext db,
         CancellationToken ct)
     {
-        if (!TenantHeader.TryRead(request, out var tenantId))
-        {
-            return MissingTenant();
-        }
+        var tenantId = user.TenantId();
 
         var delivery = await OwnedDeliveries(db, tenantId).AsNoTracking().SingleOrDefaultAsync(d => d.Id == id, ct);
         if (delivery is null)
@@ -93,15 +88,12 @@ internal static class DeliveryRoutes
 
     private static async Task<IResult> ResendAsync(
         Guid id,
-        HttpRequest request,
+        ClaimsPrincipal user,
         WebhookDbContext db,
         TimeProvider time,
         CancellationToken ct)
     {
-        if (!TenantHeader.TryRead(request, out var tenantId))
-        {
-            return MissingTenant();
-        }
+        var tenantId = user.TenantId();
 
         var delivery = await OwnedDeliveries(db, tenantId).SingleOrDefaultAsync(d => d.Id == id, ct);
         if (delivery is null)
@@ -139,10 +131,4 @@ internal static class DeliveryRoutes
 
     internal static DeliverySummaryResponse ToSummary(Delivery d) => new(
         d.Id, d.EventId, d.EndpointId, d.Status.ToString(), d.AttemptCount, d.NextAttemptAt, d.LastError, d.CreatedAt);
-
-    private static IResult MissingTenant() =>
-        Results.Problem(
-            title: "Missing or invalid tenant.",
-            detail: $"Send a valid GUID in the {TenantHeader.Name} header.",
-            statusCode: StatusCodes.Status400BadRequest);
 }
