@@ -10,6 +10,9 @@ public sealed record IssuedKey(ApiKey Key, string PlainText);
 
 public sealed record AuthenticatedKey(Guid TenantId, Guid KeyId);
 
+/// <summary>Who a key belongs to, in words a person can read. Never contains the key itself.</summary>
+public sealed record KeyIdentity(Guid TenantId, string TenantName, Guid ApiKeyId, string ApiKeyName);
+
 public enum RevokeOutcome
 {
     Revoked,
@@ -72,6 +75,13 @@ public sealed class ApiKeyService
 
         return new AuthenticatedKey(stored.TenantId, stored.Id);
     }
+
+    public Task<KeyIdentity?> DescribeAsync(Guid tenantId, Guid keyId, CancellationToken ct) =>
+        (from k in _db.ApiKeys.AsNoTracking()
+         join t in _db.Tenants.AsNoTracking() on k.TenantId equals t.Id
+         where k.Id == keyId && k.TenantId == tenantId
+         select new KeyIdentity(t.Id, t.Name, k.Id, k.Name))
+        .SingleOrDefaultAsync(ct);
 
     public Task<List<ApiKey>> ListAsync(Guid tenantId, CancellationToken ct) =>
         _db.ApiKeys.AsNoTracking()

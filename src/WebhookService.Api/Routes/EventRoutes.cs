@@ -35,11 +35,13 @@ internal static class EventRoutes
             return Results.NotFound();
         }
 
-        var deliveries = await db.Deliveries.AsNoTracking()
-            .Where(d => d.EventId == id)
-            .OrderBy(d => d.CreatedAt)
-            .ThenBy(d => d.Id)
-            .ToListAsync(ct);
+        var type = ev.Type;
+        var deliveries = await (
+            from d in db.Deliveries.AsNoTracking()
+            join ep in db.Endpoints.AsNoTracking() on d.EndpointId equals ep.Id
+            where d.EventId == id && ep.TenantId == tenantId
+            orderby d.CreatedAt, d.Id
+            select new DeliveryRow { Delivery = d, EventType = type, EndpointUrl = ep.Url }).ToListAsync(ct);
 
         using var payload = JsonDocument.Parse(ev.PayloadJson);
 

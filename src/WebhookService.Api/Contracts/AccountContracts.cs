@@ -12,3 +12,6 @@ public sealed record ApiKeyCreatedResponse(Guid Id, string Name, string Prefix, 
 
 /// <summary>What the owner can see later. The key itself is never included, only its public prefix.</summary>
 public sealed record ApiKeySummaryResponse(Guid Id, string Name, string Prefix, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
+
+/// <summary>Who is signed in. Used by the panel to show the tenant and key. Never contains the key itself.</summary>
+public sealed record MeResponse(Guid TenantId, string TenantName, Guid ApiKeyId, string ApiKeyName);

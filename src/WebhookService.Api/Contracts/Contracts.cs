@@ -4,6 +4,9 @@ namespace WebhookService.Api.Contracts;
 
 public sealed record CreateEndpointRequest(string? Url);
 
+/// <param name="IsActive">Required. An inactive endpoint receives no new events.</param>
+public sealed record UpdateEndpointRequest(bool? IsActive);
+
 /// <summary>The signing secret is only included when the endpoint is created. It is never shown again.</summary>
 public sealed record EndpointResponse(Guid Id, string Url, bool IsActive, DateTimeOffset CreatedAt);
 

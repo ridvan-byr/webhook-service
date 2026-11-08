@@ -20,6 +20,7 @@ internal static class EndpointRoutes
         group.MapPost("/", CreateAsync).WithName("CreateEndpoint");
         group.MapGet("/", ListAsync).WithName("ListEndpoints");
         group.MapGet("/{id:guid}", GetAsync).WithName("GetEndpoint");
+        group.MapPatch("/{id:guid}", UpdateAsync).WithName("UpdateEndpoint");
     }
 
     private static async Task<IResult> CreateAsync(
@@ -81,6 +82,44 @@ internal static class EndpointRoutes
             .SingleOrDefaultAsync(e => e.Id == id && e.TenantId == tenantId, ct);
 
         return endpoint is null ? Results.NotFound() : Results.Ok(ToResponse(endpoint));
+    }
+
+    private static async Task<IResult> UpdateAsync(
+        Guid id,
+        UpdateEndpointRequest body,
+        ClaimsPrincipal user,
+        WebhookDbContext db,
+        CancellationToken ct)
+    {
+        if (body.IsActive is null)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["isActive"] = ["Is required and must be true or false."],
+            });
+        }
+
+        var tenantId = user.TenantId();
+
+        // Filtering by tenant means another tenant's endpoint looks like it does not exist.
+        var endpoint = await db.Endpoints.SingleOrDefaultAsync(e => e.Id == id && e.TenantId == tenantId, ct);
+        if (endpoint is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (body.IsActive.Value)
+        {
+            endpoint.Activate();
+        }
+        else
+        {
+            endpoint.Deactivate();
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        return Results.Ok(ToResponse(endpoint));
     }
 
     private static EndpointResponse ToResponse(DomainEndpoint e) =>

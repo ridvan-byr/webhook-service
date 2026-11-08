@@ -30,6 +30,94 @@ public class EndpointApiTests : ApiTestBase
     }
 
     [Fact]
+    public async Task An_endpoint_can_be_deactivated_and_activated_again()
+    {
+        var created = await CreateEndpointAsync();
+
+        var off = await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{created.Id}", "{\"isActive\":false}"));
+
+        Assert.Equal(HttpStatusCode.OK, off.StatusCode);
+        Assert.False((await off.Content.ReadFromJsonAsync<EndpointResponse>())!.IsActive);
+
+        var afterOff = await Client.SendAsync(Request(HttpMethod.Get, $"/endpoints/{created.Id}"));
+        Assert.False((await afterOff.Content.ReadFromJsonAsync<EndpointResponse>())!.IsActive);
+
+        var on = await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{created.Id}", "{\"isActive\":true}"));
+
+        Assert.Equal(HttpStatusCode.OK, on.StatusCode);
+        Assert.True((await on.Content.ReadFromJsonAsync<EndpointResponse>())!.IsActive);
+    }
+
+    [Fact]
+    public async Task A_deactivated_endpoint_receives_no_new_events_and_a_reactivated_one_does_again()
+    {
+        var created = await CreateEndpointAsync();
+        const string Event = "{\"type\":\"order.created\",\"payload\":{\"id\":1}}";
+
+        await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{created.Id}", "{\"isActive\":false}"));
+        var whileOff = await (await PostEventAsync(Event)).Content.ReadFromJsonAsync<EventAcceptedResponse>();
+
+        await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{created.Id}", "{\"isActive\":true}"));
+        var whileOn = await (await PostEventAsync(Event)).Content.ReadFromJsonAsync<EventAcceptedResponse>();
+
+        Assert.Equal(0, whileOff!.Deliveries);
+        Assert.Equal(1, whileOn!.Deliveries);
+    }
+
+    [Fact]
+    public async Task Changing_an_endpoint_to_the_state_it_already_has_is_fine()
+    {
+        var created = await CreateEndpointAsync();
+
+        var first = await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{created.Id}", "{\"isActive\":false}"));
+        var second = await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{created.Id}", "{\"isActive\":false}"));
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task Another_tenants_endpoint_cannot_be_changed()
+    {
+        var other = Guid.NewGuid();
+        var theirs = await CreateEndpointAsync(other);
+
+        var response = await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{theirs.Id}", "{\"isActive\":false}"));
+        var stillActive = await (await Client.SendAsync(Request(HttpMethod.Get, $"/endpoints/{theirs.Id}", tenant: other)))
+            .Content.ReadFromJsonAsync<EndpointResponse>();
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.True(stillActive!.IsActive);
+    }
+
+    [Fact]
+    public async Task An_unknown_endpoint_is_not_found()
+    {
+        var response = await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{Guid.NewGuid()}", "{\"isActive\":false}"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"isActive\":null}")]
+    [InlineData("{\"isActive\":\"yes\"}")]
+    [InlineData("{\"isActive\":1}")]
+    [InlineData("null")]
+    [InlineData("")]
+    public async Task A_change_needs_a_true_or_false_value(string body)
+    {
+        var created = await CreateEndpointAsync();
+
+        var response = await Client.SendAsync(Request(HttpMethod.Patch, $"/endpoints/{created.Id}", body));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var unchanged = await (await Client.SendAsync(Request(HttpMethod.Get, $"/endpoints/{created.Id}")))
+            .Content.ReadFromJsonAsync<EndpointResponse>();
+        Assert.True(unchanged!.IsActive);
+    }
+
+    [Fact]
     public async Task Each_endpoint_gets_a_different_secret()
     {
         var first = await CreateEndpointAsync();
