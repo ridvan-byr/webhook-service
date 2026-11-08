@@ -1,7 +1,8 @@
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using WebhookService.Api.Contracts;
-using WebhookService.Api.Http;
+using WebhookService.Api.Security;
 using WebhookService.Infrastructure.Persistence;
 using WebhookService.Infrastructure.Services;
 
@@ -21,17 +22,11 @@ internal static class EventRoutes
 
     private static async Task<IResult> GetAsync(
         Guid id,
-        HttpRequest request,
+        ClaimsPrincipal user,
         WebhookDbContext db,
         CancellationToken ct)
     {
-        if (!TenantHeader.TryRead(request, out var tenantId))
-        {
-            return Results.Problem(
-                title: "Missing or invalid tenant.",
-                detail: $"Send a valid GUID in the {TenantHeader.Name} header.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
+        var tenantId = user.TenantId();
 
         var ev = await db.Events.AsNoTracking()
             .SingleOrDefaultAsync(e => e.Id == id && e.TenantId == tenantId, ct);
@@ -58,17 +53,12 @@ internal static class EventRoutes
 
     private static async Task<IResult> CreateAsync(
         HttpRequest request,
+        ClaimsPrincipal user,
         CreateEventRequest body,
         EventIngestionService ingestion,
         CancellationToken ct)
     {
-        if (!TenantHeader.TryRead(request, out var tenantId))
-        {
-            return Results.Problem(
-                title: "Missing or invalid tenant.",
-                detail: $"Send a valid GUID in the {TenantHeader.Name} header.",
-                statusCode: StatusCodes.Status400BadRequest);
-        }
+        var tenantId = user.TenantId();
 
         var errors = new Dictionary<string, string[]>();
 

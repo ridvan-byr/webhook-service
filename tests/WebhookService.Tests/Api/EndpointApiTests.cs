@@ -51,12 +51,12 @@ public class EndpointApiTests : ApiTestBase
     }
 
     [Fact]
-    public async Task A_missing_tenant_header_is_rejected()
+    public async Task A_request_without_credentials_is_rejected()
     {
         var response = await Client.SendAsync(
             Request(HttpMethod.Post, "/endpoints", "{\"url\":\"https://example.com\"}", tenant: Guid.Empty));
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

@@ -1,5 +1,8 @@
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using WebhookService.Api.Routes;
+using WebhookService.Api.Security;
 using WebhookService.Infrastructure.Persistence;
 using WebhookService.Infrastructure.Services;
 
@@ -22,6 +25,16 @@ builder.Services.AddDbContext<WebhookDbContext>((serviceProvider, options) =>
 });
 
 builder.Services.AddScoped<EventIngestionService>();
+builder.Services.AddScoped<ApiKeyService>();
+
+builder.Services
+    .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, _ => { });
+
+// Secure by default: every route needs a valid API key unless it explicitly opts out with AllowAnonymous().
+// A route added later and forgotten is therefore protected, not open.
+builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
 var app = builder.Build();
 
@@ -37,10 +50,15 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .AllowAnonymous()
     .WithName("Health")
     .WithOpenApi();
 
+app.MapAccountRoutes();
 app.MapEndpointRoutes();
 app.MapEventRoutes();
 app.MapDeliveryRoutes();

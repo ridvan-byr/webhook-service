@@ -22,6 +22,46 @@ namespace WebhookService.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("WebhookService.Core.Domain.ApiKey", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<byte[]>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Prefix")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Prefix")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("api_keys", (string)null);
+                });
+
             modelBuilder.Entity("WebhookService.Core.Domain.Delivery", b =>
                 {
                     b.Property<Guid>("Id")
@@ -160,6 +200,34 @@ namespace WebhookService.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("events", (string)null);
+                });
+
+            modelBuilder.Entity("WebhookService.Core.Domain.Tenant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("tenants", (string)null);
+                });
+
+            modelBuilder.Entity("WebhookService.Core.Domain.ApiKey", b =>
+                {
+                    b.HasOne("WebhookService.Core.Domain.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("WebhookService.Core.Domain.Delivery", b =>

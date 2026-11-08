@@ -53,16 +53,45 @@ Then open `/health`.
 Persistence tests start their own PostgreSQL container with Testcontainers, so
 Docker must be running when you run `dotnet test`.
 
-## API (v0.1, work in progress)
+## API
 
-Authentication is not implemented yet. For now the tenant is passed in an
-`X-Tenant-Id` header (a GUID). See [ADR 0003](docs/decisions/0003-tenant-header-and-idempotency.md).
+### Authentication
+
+Every route except `/health` needs an API key: `Authorization: Bearer whk_...`.
+Keys belong to a tenant, and a tenant only ever sees its own data
+([ADR 0005](docs/decisions/0005-api-key-authentication.md)).
+
+The operator creates tenants. This is switched off unless an admin key is configured, for
+example with an environment variable (use a long random value, never commit it):
+
+```bash
+export Admin__ApiKey="<long random value>"
+```
+
+Create a tenant. The response contains its first API key, **shown only once**:
+
+```bash
+curl -X POST http://localhost:5000/admin/tenants \
+  -H "X-Admin-Key: $Admin__ApiKey" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Acme"}'
+```
+
+A tenant can create more keys, list them (only the public prefix is shown) and revoke them:
+
+| Request | Result |
+|---|---|
+| `POST /api-keys` | New key, shown once |
+| `GET /api-keys` | Name, prefix, creation and revocation time of each key |
+| `DELETE /api-keys/{id}` | Revokes a key at once (`409` if it is the key making the request) |
+
+### Sending events
 
 Register a receiver. The signing secret is returned once:
 
 ```bash
 curl -X POST http://localhost:5000/endpoints \
-  -H "X-Tenant-Id: 11111111-1111-1111-1111-111111111111" \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/hook"}'
 ```
@@ -71,7 +100,7 @@ Send an event. Repeating the same `Idempotency-Key` never creates a second event
 
 ```bash
 curl -X POST http://localhost:5000/events \
-  -H "X-Tenant-Id: 11111111-1111-1111-1111-111111111111" \
+  -H "Authorization: Bearer $API_KEY" \
   -H "Idempotency-Key: order-42" \
   -H "Content-Type: application/json" \
   -d '{"type":"order.created","payload":{"id":42}}'
@@ -105,7 +134,8 @@ Delivery is at-least-once. See [ADR 0004](docs/decisions/0004-delivery-worker.md
 
 ### Known limitations
 
-- Tenant header is not secure (temporary).
+- No rate limiting, so keys could be guessed by brute force (the 256-bit secret makes that
+  impractical, but failed attempts are not throttled or logged yet).
 - No SSRF protection on endpoint URLs yet.
 - No event-type filtering per endpoint.
 
@@ -126,7 +156,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 ## Roadmap
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
-- [ ] v0.2 CI (workflow added), API-key auth, Next.js dashboard
+- [ ] v0.2 CI (done), API-key auth (done), Next.js dashboard
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide
