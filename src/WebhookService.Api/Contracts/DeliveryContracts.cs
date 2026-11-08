@@ -6,7 +6,9 @@ namespace WebhookService.Api.Contracts;
 public sealed record DeliverySummaryResponse(
     Guid Id,
     Guid EventId,
+    string EventType,
     Guid EndpointId,
+    string EndpointUrl,
     string Status,
     int AttemptCount,
     DateTimeOffset NextAttemptAt,

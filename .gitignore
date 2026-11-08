@@ -486,3 +486,7 @@ $RECYCLE.BIN/
 # Local research notes (not part of the project)
 research_notes/
 reports/
+
+# The AGENTS.md that "next dev" writes into the panel is a block of instructions for AI agents, and it
+# comes from the Next.js package: a version update could change what it says. Keep it out of the repository.
+web/AGENTS.md

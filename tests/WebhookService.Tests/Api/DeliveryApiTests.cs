@@ -84,6 +84,85 @@ public class DeliveryApiTests : ApiTestBase
     }
 
     [Fact]
+    public async Task The_delivery_list_shows_the_event_type_and_the_endpoint_address()
+    {
+        await CreateEndpointAsync(url: "https://hooks.example.com/orders");
+        await SendEventAsync("{\"type\":\"order.created\",\"payload\":{\"id\":1}}");
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, "/deliveries"));
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(json.RootElement.EnumerateArray());
+
+        Assert.Equal("order.created", item.GetProperty("eventType").GetString());
+        Assert.Equal("https://hooks.example.com/orders", item.GetProperty("endpointUrl").GetString());
+    }
+
+    [Fact]
+    public async Task The_delivery_detail_carries_the_event_type_and_the_endpoint_address()
+    {
+        await CreateEndpointAsync(url: "https://hooks.example.com/orders");
+        var deliveryId = await DeliveryIdOfAsync(await SendEventAsync("{\"type\":\"order.created\",\"payload\":{}}"));
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, $"/deliveries/{deliveryId}"));
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var delivery = json.RootElement.GetProperty("delivery");
+
+        Assert.Equal("order.created", delivery.GetProperty("eventType").GetString());
+        Assert.Equal("https://hooks.example.com/orders", delivery.GetProperty("endpointUrl").GetString());
+    }
+
+    [Fact]
+    public async Task The_resend_answer_carries_the_event_type_and_the_endpoint_address()
+    {
+        await CreateEndpointAsync(url: "https://hooks.example.com/orders");
+        var deliveryId = await DeliveryIdOfAsync(await SendEventAsync("{\"type\":\"order.created\",\"payload\":{}}"));
+        await MakeDeadAsync(deliveryId);
+
+        var response = await Client.SendAsync(Request(HttpMethod.Post, $"/deliveries/{deliveryId}/resend"));
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal("order.created", json.RootElement.GetProperty("eventType").GetString());
+        Assert.Equal("https://hooks.example.com/orders", json.RootElement.GetProperty("endpointUrl").GetString());
+    }
+
+    [Fact]
+    public async Task The_event_detail_lists_its_deliveries_with_the_event_type_and_the_endpoint_address()
+    {
+        await CreateEndpointAsync(url: "https://hooks.example.com/orders");
+        var eventId = await SendEventAsync("{\"type\":\"order.created\",\"payload\":{}}");
+
+        var response = await Client.SendAsync(Request(HttpMethod.Get, $"/events/{eventId}"));
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var delivery = Assert.Single(json.RootElement.GetProperty("deliveries").EnumerateArray());
+
+        Assert.Equal("order.created", delivery.GetProperty("eventType").GetString());
+        Assert.Equal("https://hooks.example.com/orders", delivery.GetProperty("endpointUrl").GetString());
+    }
+
+    [Fact]
+    public async Task A_delivery_that_points_at_another_tenants_endpoint_never_reveals_its_address()
+    {
+        // The API cannot create this situation, so the data is written directly. It checks that the
+        // queries do not trust the data blindly: an endpoint address belongs to its own tenant only.
+        var other = Guid.NewGuid();
+        var foreign = await CreateEndpointAsync(other, "https://secret.other-tenant.example/hook");
+        var eventId = await SendEventAsync("{\"type\":\"order.created\",\"payload\":{}}"); // this tenant has no endpoints
+
+        await using (var db = Postgres.CreateContext())
+        {
+            db.Add(Delivery.Create(eventId, foreign.Id, DateTimeOffset.UtcNow));
+            await db.SaveChangesAsync();
+        }
+
+        var list = await (await Client.SendAsync(Request(HttpMethod.Get, "/deliveries"))).Content.ReadAsStringAsync();
+        var detail = await (await Client.SendAsync(Request(HttpMethod.Get, $"/events/{eventId}"))).Content.ReadAsStringAsync();
+
+        Assert.DoesNotContain("other-tenant", list);
+        Assert.DoesNotContain("other-tenant", detail);
+    }
+
+    [Fact]
     public async Task An_unknown_status_filter_is_rejected()
     {
         var response = await Client.SendAsync(Request(HttpMethod.Get, "/deliveries?status=banana"));

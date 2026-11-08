@@ -111,9 +111,20 @@ Read what happened (all of these are limited to the caller's tenant):
 | Request | Result |
 |---|---|
 | `GET /events/{id}` | The event, its payload and one summary per delivery |
-| `GET /deliveries?status=Dead&limit=50` | Deliveries, newest first. `status` is `Pending`, `InProgress`, `Succeeded` or `Dead` |
+| `GET /deliveries?status=Dead&limit=50` | Deliveries, newest first, each with its event type and endpoint address. `status` is `Pending`, `InProgress`, `Succeeded` or `Dead` |
 | `GET /deliveries/{id}` | One delivery with every attempt: status code, duration, response snippet, error |
 | `POST /deliveries/{id}/resend` | Queues a `Dead` delivery again with a fresh set of attempts (`409` for any other status) |
+| `GET /me` | The tenant and the key behind the credentials. Never contains the key itself |
+
+Switch an endpoint off, or on again. An inactive endpoint gets no new events; deliveries that
+already exist are not affected:
+
+```bash
+curl -X PATCH http://localhost:5000/endpoints/$ENDPOINT_ID \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"isActive":false}'
+```
 
 Run the delivery worker in a second terminal (the API applies the database migrations in
 Development, so start it first):

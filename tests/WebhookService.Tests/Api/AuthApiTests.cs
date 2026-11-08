@@ -25,10 +25,12 @@ public class AuthApiTests : ApiTestBase
     [InlineData("GET", "/deliveries")]
     [InlineData("GET", "/api-keys")]
     [InlineData("POST", "/api-keys")]
+    [InlineData("GET", "/me")]
+    [InlineData("PATCH", "/endpoints/00000000-0000-0000-0000-000000000001")]
     public async Task Protected_routes_reject_requests_without_credentials(string method, string url)
     {
         var request = new HttpRequestMessage(new HttpMethod(method), url);
-        if (method == "POST")
+        if (method is "POST" or "PATCH")
         {
             request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         }

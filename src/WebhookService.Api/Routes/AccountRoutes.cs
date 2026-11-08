@@ -20,6 +20,10 @@ internal static class AccountRoutes
             .WithTags("Admin")
             .WithName("CreateTenant");
 
+        app.MapGet("/me", MeAsync)
+            .WithTags("Account")
+            .WithName("Me");
+
         var keys = app.MapGroup("/api-keys").WithTags("API keys");
         keys.MapPost("/", CreateKeyAsync).WithName("CreateApiKey");
         keys.MapGet("/", ListKeysAsync).WithName("ListApiKeys");
@@ -109,6 +113,15 @@ internal static class AccountRoutes
                 statusCode: StatusCodes.Status409Conflict),
             _ => Results.NotFound(),
         };
+    }
+
+    private static async Task<IResult> MeAsync(ClaimsPrincipal user, ApiKeyService keys, CancellationToken ct)
+    {
+        var me = await keys.DescribeAsync(user.TenantId(), user.ApiKeyId(), ct);
+
+        return me is null
+            ? Results.Unauthorized()
+            : Results.Ok(new MeResponse(me.TenantId, me.TenantName, me.ApiKeyId, me.ApiKeyName));
     }
 
     private static ApiKeySummaryResponse ToSummary(ApiKey k) =>
