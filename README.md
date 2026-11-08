@@ -1,5 +1,7 @@
 # Webhook Service
 
+[![CI](https://github.com/ridvan-byr/webhook-service/actions/workflows/ci.yml/badge.svg)](https://github.com/ridvan-byr/webhook-service/actions/workflows/ci.yml)
+
 A self-hostable service that delivers webhooks reliably: signed requests,
 retries with backoff, a dead-letter state, and a full delivery history.
 
@@ -124,7 +126,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 ## Roadmap
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
-- [ ] v0.2 Next.js dashboard, API-key auth, CI
+- [ ] v0.2 CI (workflow added), API-key auth, Next.js dashboard
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide
