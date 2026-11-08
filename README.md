@@ -75,6 +75,15 @@ curl -X POST http://localhost:5000/events \
   -d '{"type":"order.created","payload":{"id":42}}'
 ```
 
+Read what happened (all of these are limited to the caller's tenant):
+
+| Request | Result |
+|---|---|
+| `GET /events/{id}` | The event, its payload and one summary per delivery |
+| `GET /deliveries?status=Dead&limit=50` | Deliveries, newest first. `status` is `Pending`, `InProgress`, `Succeeded` or `Dead` |
+| `GET /deliveries/{id}` | One delivery with every attempt: status code, duration, response snippet, error |
+| `POST /deliveries/{id}/resend` | Queues a `Dead` delivery again with a fresh set of attempts (`409` for any other status) |
+
 Run the delivery worker in a second terminal (the API applies the database migrations in
 Development, so start it first):
 
@@ -114,7 +123,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 
 ## Roadmap
 
-- [ ] v0.1 events, endpoints, signed delivery, retries, tests (done), manual re-send of dead deliveries (API still missing)
+- [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
 - [ ] v0.2 Next.js dashboard, API-key auth, CI
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
