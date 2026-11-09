@@ -17,7 +17,7 @@ namespace WebhookService.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.33")
+                .HasAnnotation("ProductVersion", "9.0.22")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -76,6 +76,9 @@ namespace WebhookService.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("EndpointId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("EnqueuedUntil")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("EventId")
                         .HasColumnType("uuid");

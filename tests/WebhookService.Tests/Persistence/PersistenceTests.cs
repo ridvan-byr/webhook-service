@@ -40,6 +40,36 @@ public class PersistenceTests
     }
 
     [Fact]
+    public async Task The_model_and_the_migrations_describe_the_same_database()
+    {
+        // Adding a property without adding the migration would work in every test that builds its schema from
+        // the model, and fail only against a database that was migrated. This is what notices it.
+        await using var db = _postgres.CreateContext();
+
+        Assert.False(db.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public async Task The_enqueue_lease_is_persisted_and_a_delivery_that_never_had_one_has_none()
+    {
+        var delivery = await SaveNewDeliveryAsync();
+        await using (var read = _postgres.CreateContext())
+        {
+            Assert.Null((await read.Deliveries.SingleAsync(x => x.Id == delivery.Id)).EnqueuedUntil);
+        }
+
+        await using (var work = _postgres.CreateContext())
+        {
+            var loaded = await work.Deliveries.SingleAsync(x => x.Id == delivery.Id);
+            loaded.MarkEnqueued(Now, TimeSpan.FromMinutes(2));
+            await work.SaveChangesAsync();
+        }
+
+        await using var again = _postgres.CreateContext();
+        Assert.Equal(Now + TimeSpan.FromMinutes(2), (await again.Deliveries.SingleAsync(x => x.Id == delivery.Id)).EnqueuedUntil);
+    }
+
+    [Fact]
     public async Task Delivery_state_changes_are_persisted()
     {
         var delivery = await SaveNewDeliveryAsync();

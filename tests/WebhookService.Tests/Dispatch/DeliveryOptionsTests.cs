@@ -36,6 +36,24 @@ public class DeliveryOptionsTests
         });
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task A_lease_that_is_not_positive_is_rejected(int seconds)
+    {
+        // Zero would let every delivery be announced again at once, on every pass.
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await using var h = await DispatchHarness.CreateAsync(_postgres, o => o.EnqueueLease = TimeSpan.FromSeconds(seconds));
+        });
+    }
+
+    [Fact]
+    public void The_lease_is_two_minutes_unless_set()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(2), new DeliveryOptions().EnqueueLease);
+    }
+
     [Fact]
     public void The_pause_after_an_error_is_five_seconds_unless_set()
     {

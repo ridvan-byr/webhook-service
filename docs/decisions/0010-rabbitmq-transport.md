@@ -1,6 +1,6 @@
 # 0010 - RabbitMQ as a delivery transport
 
-Status: proposed. Step 1 of the plan (the seam) is built; the RabbitMQ transport itself is not.
+Status: proposed. Steps 1 (the seam) and 2 (the lease) of the plan are built; the RabbitMQ transport itself is not.
 
 ## Context
 
@@ -113,17 +113,30 @@ ORDER BY "NextAttemptAt" LIMIT n
 FOR UPDATE SKIP LOCKED
 ```
 
-Inside one transaction it publishes a message per row **with publisher confirms**, then sets
-`EnqueuedUntil = now + EnqueueLease` and commits. The order matters:
+**Lease first, then publish** (this replaces what this section said before step 2, see "What step 2 found"). In one
+short transaction the relay selects the rows, sets `EnqueuedUntil = now + EnqueueLease` on each through the domain
+model, and **commits**. Only then does it publish a message per row **with publisher confirms**, outside any
+transaction. The order matters:
 
-- publish fails or is not confirmed: the transaction rolls back, nothing is marked, the rows are found again;
-- publish confirmed but the commit fails: the row is published again later, a duplicate, which is harmless;
-- publish and commit both succeed: the row stays quiet until `EnqueueLease` passes. If the message was lost anyway,
-  or the consumer died, the lease expires and the relay publishes again.
+- the publish fails or is not confirmed: the relay gives the leases back (`ReleaseEnqueue`), so the rows are due again
+  at once;
+- the relay dies after committing and before publishing, or the message is lost, or nobody acts on it: nothing gives
+  the lease back, so it runs out and the rows are announced again. The cost is a delay of at most `EnqueueLease`, and
+  only in these failure cases;
+- everything works: the row stays quiet until a worker claims it, which ends the lease.
 
-`EnqueuedUntil` is a new nullable column (one migration). `Delivery.MarkFailed` and `Requeue` clear it, so a retry
-is published when it becomes due. `EnqueueLease` must be longer than `LockDuration + RequestTimeout`, checked at
-start like the existing `LockDuration` rule, so a slow but healthy attempt is not published a second time.
+`EnqueuedUntil` is a new nullable column (one migration). It is cleared by `StartAttempt` (the message did its job, and
+a crashed worker is then recovered by its lock, not by a lease that no longer matters), `MarkSucceeded`, `MarkFailed`
+(so a retry is announced when it is due and not when an older, longer lease runs out) and `Requeue`. A lease never
+changes what the delivery is, and a worker that polls the database can still claim a leased delivery.
+
+`EnqueueLease` has **no required relation to `LockDuration` or `RequestTimeout`**. An earlier version of this text
+demanded `EnqueueLease > LockDuration + RequestTimeout` "so a slow but healthy attempt is not published a second
+time". That was wrong: a healthy attempt is `InProgress` with a valid lock, and such a row is never selected,
+whatever the lease. The lease only governs the window in which a row is still `Pending` and a message about it is
+outstanding. It should be longer than the time a message normally waits before a worker takes it (otherwise rows are
+announced twice, which is harmless but wasteful) and short enough that a lost message is noticed in reasonable time.
+The default is two minutes; the only rule enforced is that it is positive.
 
 ### The consumer
 
@@ -156,7 +169,8 @@ consumer. Persistent messages, publisher confirms on.
 | Broker restarts, queue contents lost | The leases expire and the relay publishes again. |
 | Message duplicated or redelivered | The second claim fails on the state machine; acknowledged and dropped. |
 | Consumer crashes mid-send | See the consumer section; the delivery is attempted again after its lock expires, as today. |
-| Relay crashes between publish and commit | The rows were not marked; they are published again (a duplicate). |
+| Relay crashes after leasing and before publishing | The leases run out and the rows are announced again; a delay of at most `EnqueueLease`. |
+| Message cannot be published or is not confirmed | The relay gives the leases back and the rows are due again at once. |
 | Receiver is slow or failing | Unchanged: the attempt is recorded and `MarkFailed` schedules the retry in the database. |
 | Malformed message | Dead-lettered, logged once, ignored. |
 | Database unreachable | The relay and consumers fail and retry with a backoff, as the worker does today. |
@@ -180,7 +194,7 @@ back to `Postgres`, which needs no data migration. That reversibility is part of
 |---|---|
 | `Delivery__Transport` | `Postgres` (default) or `RabbitMq` |
 | `Delivery__RabbitMq__Host`, `__Port`, `__Username`, `__Password`, `__UseTls` | The broker |
-| `Delivery__EnqueueLease` | How long a published delivery is left alone before it is published again |
+| `Delivery__EnqueueLease` | How long an announced delivery is left alone before it is announced again (default two minutes, must be positive) |
 
 ## How it will be tested
 
@@ -193,8 +207,8 @@ both:
   RabbitMQ run against a real broker in a container (Testcontainers).
 - Tests only the RabbitMQ side needs: a duplicate message; a message for a finished delivery; a message for a
   delivery that does not exist; a poison message; the broker stopped and started again mid-run; the broker down while
-  events are accepted; publish not confirmed; a consumer killed before it acknowledges; the relay killed between
-  publish and commit; a Postgres worker and a RabbitMQ worker running together over the same deliveries.
+  events are accepted; publish not confirmed; a consumer killed before it acknowledges; the relay killed after
+  leasing and before publishing; a Postgres worker and a RabbitMQ worker running together over the same deliveries.
 - A variant of `scripts/smoke.sh` with `Delivery__Transport=RabbitMq` and the broker in Compose, run in CI.
 - As in the earlier slices, deliberate breakages (an acknowledgement before the commit, a requeue, a removed lease
   check) must make tests fail, and what was run is written down.
@@ -207,7 +221,8 @@ Each step is its own pull request, in this order, because the first makes the ot
    keeps the delivery logic. The existing tests pass unchanged; the contract tests are parameterised with one
    transport. *Done when:* every existing test passes, and the two-workers test passes through the seam.
    **Done**, see "What step 1 found" below.
-2. **Schema and relay.** `EnqueuedUntil`, the lease rule, the due query as its own tested unit. Nothing published yet.
+2. **Schema and the lease.** `EnqueuedUntil`, the lease rules in the domain model, the due query as its own tested
+   unit (`DeliveryEnqueueStore`). Nothing is published yet. **Done**, see "What step 2 found" below.
 3. **The RabbitMQ transport.** Relay publishing with confirms, consumer, topology, settings, the Compose service
    (`--profile rabbitmq`), contract tests and the broker failure tests, smoke variant in CI.
 4. **Documentation and release.** README, changelog, the failure table checked against what the tests showed,
@@ -246,6 +261,31 @@ time), all closed before this was finished:
 One of the breakages (removing the `Commit` of the claim) made a test **loop for ever**: the loop that drains a
 worker only stops when it is handed nothing, and a claim that was never committed always hands something. That would
 have hung CI until its time limit. The loop now has a limit and fails instead.
+
+## What step 2 found
+
+Written after the fact, like the section above.
+
+**What was built.** `Delivery.EnqueuedUntil` with `MarkEnqueued`, `ReleaseEnqueue` and `IsEnqueuedAt`, and the rules above;
+a migration that adds one nullable column (existing rows are untouched, and the migration can be undone);
+`Delivery:EnqueueLease` (default two minutes, must be positive); and `DeliveryEnqueueStore` with `LeaseDueAsync`
+(the due query plus "not under a lease", oldest first, one batch, skipping rows another relay is leasing) and
+`ReleaseAsync`. It is registered but nothing in production calls it yet, so behaviour is unchanged.
+
+**Thinking it through before building it found two mistakes in this ADR**, both corrected above:
+
+- **A race in the relay.** The text said to publish inside the transaction that holds the row locks and commit
+  afterwards. But the consumer claims with `FOR UPDATE SKIP LOCKED`. A message that arrives right after it was
+  published finds the row still locked by the relay's open transaction, skips it, and acknowledges and drops the message.
+  The row then waits for the whole lease. That would have delayed essentially every delivery. Leasing first and
+  committing before publishing removes the race, and also holds no database lock across a network call.
+- **A wrong rule for the lease.** See the paragraph about `EnqueueLease` above.
+
+**The "due" condition is written twice** (here and in the claim of `PostgresDeliverySource`), because both must be raw SQL.
+A test seeds every state a delivery can be in, asks the relay what it would lease and a polling worker what it
+claims, and requires the same answer.
+
+**Checking the tests by breaking the code** is recorded in the pull request for this step.
 
 ## Limits and open questions
 

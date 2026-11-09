@@ -8,6 +8,11 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 ### Added
 
 - `Delivery__ErrorBackoff` (default 5 seconds, as before): how long the worker waits after a batch failed.
+- Step 2 of the RabbitMQ plan, with no change in behaviour: a nullable `EnqueuedUntil` column on `deliveries` (one
+  migration, existing rows untouched), the lease rules in the delivery model, `Delivery__EnqueueLease` (default two
+  minutes) and `DeliveryEnqueueStore`, which finds due deliveries and puts a lease on them. Nothing announces
+  deliveries yet. ([ADR 0010](docs/decisions/0010-rabbitmq-transport.md), which was corrected where building this
+  showed it to be wrong)
 
 ### Changed
 
