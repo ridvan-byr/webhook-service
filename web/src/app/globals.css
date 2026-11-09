@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/*
+ * Colours. Every pair that text is drawn on has a measured WCAG contrast ratio of at least 4.5:1
+ * (3:1 for the borders of form controls), in both themes. If you change a value, measure it again.
+ * The theme follows the operating system; there is no switch.
+ */
+:root {
+  color-scheme: light dark;
+
+  --page: #f6f7f9;
+  --surface: #ffffff;
+  --line: #d9dde3;
+  --fg: #1b1f24;
+  --muted: #566170;
+  --accent: #2f4bc4;
+  --on-accent: #ffffff;
+  --input-line: #7b8594;
+
+  --ok-fg: #146c2e;
+  --ok-bg: #e3f4e8;
+  --pending-fg: #434c5a;
+  --pending-bg: #e9ecf0;
+  --progress-fg: #1a56a8;
+  --progress-bg: #e3eefb;
+  --dead-fg: #9b1c1c;
+  --dead-bg: #fbe6e6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0f1216;
+    --surface: #171b21;
+    --line: #2c333c;
+    --fg: #e7eaee;
+    --muted: #9aa4b2;
+    --accent: #8ea2ff;
+    --on-accent: #0f1216;
+    --input-line: #6f7a89;
+
+    --ok-fg: #7fd99a;
+    --ok-bg: #12301c;
+    --pending-fg: #b4bcc8;
+    --pending-bg: #232932;
+    --progress-fg: #8ab8f5;
+    --progress-bg: #14283f;
+    --dead-fg: #ff9b9b;
+    --dead-bg: #3a1618;
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-input-line: var(--input-line);
+  --color-ok-fg: var(--ok-fg);
+  --color-ok-bg: var(--ok-bg);
+  --color-pending-fg: var(--pending-fg);
+  --color-pending-bg: var(--pending-bg);
+  --color-progress-fg: var(--progress-fg);
+  --color-progress-bg: var(--progress-bg);
+  --color-dead-fg: var(--dead-fg);
+  --color-dead-bg: var(--dead-bg);
+
+  /* System fonts only: nothing is downloaded from another site. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+body {
+  background: var(--page);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A focus ring that is always visible on the keyboard and that has enough contrast on both themes. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

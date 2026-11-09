@@ -35,6 +35,45 @@ updates:
           - "Microsoft.AspNetCore.*"
           - "dotnet-ef"
 
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      # Next.js and React are released together and their versions have to match.
+      next-and-react:
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+          - "eslint-config-next"
+          - "@types/react"
+          - "@types/react-dom"
+
+      # Tailwind and its build plugin have to have the same version.
+      tailwind:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
+
+      # Low-risk updates of everything else share one weekly pull request.
+      # Major versions of these packages are not grouped: each one arrives as its own pull request.
+      npm-minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+          - "eslint-config-next"
+          - "@types/react"
+          - "@types/react-dom"
+          - "tailwindcss"
+          - "@tailwindcss/*"
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
