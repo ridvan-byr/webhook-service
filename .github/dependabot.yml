@@ -116,7 +116,9 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      - dependency-name: "mcr.microsoft.com/dotnet/*"
+      # Dependabot names these images without the registry host (dotnet/sdk, dotnet/aspnet, dotnet/runtime), so
+      # a pattern that starts with mcr.microsoft.com matches nothing; that let a jump from 8.0 to 10.0 through.
+      - dependency-name: "dotnet/*"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
