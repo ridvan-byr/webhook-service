@@ -32,7 +32,7 @@ EXPOSE 8080
 USER app
 ENTRYPOINT ["dotnet", "WebhookService.Api.dll"]
 
-FROM mcr.microsoft.com/dotnet/runtime:8.0 AS worker
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS worker
 WORKDIR /app
 COPY --from=build /out/worker .
 ENV DOTNET_ENVIRONMENT=Production
