@@ -23,7 +23,7 @@ RUN dotnet publish src/WebhookService.Api/WebhookService.Api.csproj \
       -c Release --no-restore -o /out/worker /p:UseAppHost=false
 
 # Both run as the unprivileged "app" user that the ASP.NET runtime image provides.
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS api
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api
 WORKDIR /app
 COPY --from=build /out/api .
 ENV ASPNETCORE_URLS=http://+:8080 \
