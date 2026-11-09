@@ -3,7 +3,8 @@ import { StatusChip } from "@/components/StatusChip";
 import type { Delivery } from "@/lib/api/deliveries";
 import { formatUtc } from "@/lib/format";
 
-const HEADERS = ["Event", "Endpoint", "Status", "Attempts", "Created", "Next attempt"];
+// Status comes second so that it is still on screen on a phone, where the table scrolls sideways.
+const HEADERS = ["Event", "Status", "Endpoint", "Attempts", "Created", "Next attempt"];
 
 /** Deliveries as a table. Everything in it came from other systems, so it is only ever shown as text. */
 export function DeliveriesTable({ deliveries }: { deliveries: Delivery[] }) {
@@ -28,10 +29,10 @@ export function DeliveriesTable({ deliveries }: { deliveries: Delivery[] }) {
                   {delivery.eventType}
                 </Link>
               </td>
-              <td className="break-all px-3 py-2">{delivery.endpointUrl}</td>
               <td className="px-3 py-2">
                 <StatusChip status={delivery.status} />
               </td>
+              <td className="min-w-[20rem] break-all px-3 py-2">{delivery.endpointUrl}</td>
               <td className="px-3 py-2">{delivery.attemptCount}</td>
               <td className="whitespace-nowrap px-3 py-2">{formatUtc(delivery.createdAt)}</td>
               <td className="whitespace-nowrap px-3 py-2">{formatUtc(delivery.nextAttemptAt)}</td>

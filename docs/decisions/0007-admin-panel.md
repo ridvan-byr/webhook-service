@@ -55,6 +55,12 @@ How it works:
 - The address field is checked by the page and not by the browser (`noValidate`), so the message is ours, is tied
   to the field and is read out by screen readers. Only a first look is done here; whether an address may be used
   (HTTPS, no private networks) is decided by the API, and its refusal is explained in fixed words.
+- An unexpected error shows a fixed message and a reference (the digest Next.js makes), never what the error said,
+  which can contain addresses or keys; the reference lets the operator find it in the server log. Like the
+  missing-page screens, the one inside the app shell adds no second `<main>`.
+- The tables scroll sideways on a phone. The columns a visitor needs first (the status of a delivery, the state of
+  an endpoint and its button) come before the wide ones, so they stay on screen; this was found by looking at the
+  screens at 375 px wide, not by a test.
 - A missing page inside the signed-in screens renders inside the app shell, so `(app)/not-found.tsx` adds no
   second `<main>`; the root `not-found.tsx` is for addresses no screen owns and brings its own.
 - Everything shown on the deliveries and event screens (event types, endpoint addresses, errors, what a receiver

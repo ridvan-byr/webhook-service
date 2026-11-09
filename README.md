@@ -5,7 +5,7 @@
 A self-hostable service that delivers webhooks reliably: signed requests,
 retries with backoff, a dead-letter state, and a full delivery history.
 
-> Status: early scaffold (v0.1 in progress). Nothing here is production-ready yet.
+> Status: the API, the worker and the admin panel work end to end. Nothing here has been run in production yet.
 
 ## Why
 
@@ -18,7 +18,7 @@ written down in [`docs/decisions`](docs/decisions).
 It is a learning and portfolio project. Hosted and mature alternatives such as
 Svix exist; this project does not try to replace them.
 
-## Planned stack
+## Stack
 
 - .NET (ASP.NET Core, background worker), EF Core
 - PostgreSQL (queue via `FOR UPDATE SKIP LOCKED`)
@@ -171,15 +171,31 @@ the second line of defence, not the first.
 
 ## Admin panel
 
-A Next.js application in [`web/`](web). Work in progress: so far it is the frame (menu, light and dark theme,
-security headers), signing in with a tenant's API key, and the deliveries screens: a list you can filter by status
-that refreshes every five seconds, and a page per delivery with every attempt and a button to send a dead
-delivery again. A page per event shows its payload and what became of it, and a form sends a test event (the payload
-is sent exactly as typed, because the signature covers those characters). The endpoints screen lists your endpoints, switches each one on or off, and adds new ones: the signing secret of
-a new endpoint is shown once, in the response to adding it, and is never stored by the panel.
-The design decisions, and why a few packages are pinned, are in
-[ADR 0007](docs/decisions/0007-admin-panel.md).
+A Next.js application in [`web/`](web) to see what happened to your events and to act on it. You sign in with the
+API key of a tenant; the browser never sees that key (the panel calls the API from its own server and keeps the key
+in an encrypted cookie).
 
+![The deliveries list, filterable by status](docs/images/deliveries.png)
+
+- **Deliveries:** the newest deliveries, filterable by status, refreshing every five seconds. A page per delivery
+  shows every attempt (when, how long, what the receiver answered) and a button to send a dead delivery again.
+- **Events:** a page per event with its payload and what became of it, and a form that sends a test event. The
+  payload is sent exactly as typed, because the signature covers those characters.
+- **Endpoints:** list, switch on or off, and add. The signing secret of a new endpoint is shown once, in the
+  response to adding it, and is never stored by the panel.
+- Light and dark theme, usable on a phone, every state shown with an icon and a word as well as a colour, and
+  accessibility checked with axe-core and the strict `jsx-a11y` lint rules.
+
+![An event with its payload and deliveries](docs/images/event.png)
+![A new endpoint and its signing secret, shown once](docs/images/endpoints.png)
+![A delivery that gave up, with its attempts](docs/images/delivery.png)
+
+<img src="docs/images/mobile-light.jpg" alt="The deliveries list on a phone, light theme" width="260">
+
+The security design is the interesting part: a nonce-based Content-Security-Policy, an AES-256-GCM session cookie
+(`__Host-` prefixed in production), every page and Server Action checking the session itself, and nothing from other
+systems ever rendered as markup. The decisions, what was verified and how, the known limits, and why a few packages
+are pinned are in [ADR 0007](docs/decisions/0007-admin-panel.md). The screenshots show made-up data from a local run.
 Requirements: Node 20.9 or later. Node 20 reached end of life in April 2026, so Node 22 or 24 is recommended.
 
 ```bash
@@ -217,7 +233,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 ## Roadmap
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
-- [ ] v0.2 CI (done), API-key auth (done), SSRF protection (done), Next.js dashboard (frame done: sign-in, screens and data to come)
+- [x] v0.2 CI, API-key auth, SSRF protection, Next.js admin panel
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide
