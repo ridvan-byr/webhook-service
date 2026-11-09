@@ -1,0 +1,4 @@
+# Files that Linux reads must keep LF line endings, also when they are checked out on Windows:
+# a shell script with CRLF fails with "\r: command not found", and a Dockerfile can break in the same way.
+*.sh text eol=lf
+Dockerfile text eol=lf

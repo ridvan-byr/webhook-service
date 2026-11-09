@@ -1,0 +1,28 @@
+# Only the database, for working on the code: run the API, the worker and the panel yourself
+# (dotnet run, npm run dev) and let them use this PostgreSQL.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# To run the whole service, use docker-compose.yml instead.
+name: webhook-service-dev
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: webhooks
+      POSTGRES_PASSWORD: webhooks_dev_password
+      POSTGRES_DB: webhooks
+    ports:
+      # Only this computer can reach it. The password is a development one.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webhooks -d webhooks"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

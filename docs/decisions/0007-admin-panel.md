@@ -1,7 +1,6 @@
 # 0007 - Admin panel
 
-Status: accepted. Only the scaffold exists so far (menu, theme, security headers); the screens that
-use the API come in the next steps.
+Status: accepted and implemented (sign-in, deliveries, events, endpoints).
 
 ## Context
 

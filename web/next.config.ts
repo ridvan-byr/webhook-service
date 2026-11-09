@@ -16,6 +16,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The build writes a small server of its own with only the packages it uses. The container image runs that
+  // instead of carrying every installed package.
+  output: "standalone",
+
   // Not announcing the framework and its version saves an attacker one step.
   poweredByHeader: false,
 

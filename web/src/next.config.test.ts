@@ -11,6 +11,11 @@ describe("next.config", () => {
     expect(config.partialPrefetching ?? false).toBe(false);
   });
 
+  it("builds a self-contained server, which is what the container image runs and copies", () => {
+    // Without it the image would have to carry every installed package to run `next start`.
+    expect(nextConfig.output).toBe("standalone");
+  });
+
   it("does not announce the framework and its version", () => {
     expect(nextConfig.poweredByHeader).toBe(false);
   });

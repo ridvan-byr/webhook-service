@@ -18,12 +18,55 @@ written down in [`docs/decisions`](docs/decisions).
 It is a learning and portfolio project. Hosted and mature alternatives such as
 Svix exist; this project does not try to replace them.
 
+## Try it
+
+You need Docker. Nothing else is installed on your machine.
+
+```bash
+git clone https://github.com/ridvan-byr/webhook-service.git
+cd webhook-service
+cp .env.example .env
+```
+
+Open `.env` and fill in the two secrets (the file shows the command that makes each one). To send to the demo
+receiver that comes with the project, also uncomment the last two settings, `ALLOW_PRIVATE_NETWORKS` and
+`REQUIRE_HTTPS`: the receiver is on a private network and speaks plain http, which the service refuses by default
+([why](docs/decisions/0006-ssrf-protection.md)). Do not do that on a server that can be reached from outside.
+
+```bash
+docker compose --profile demo up -d --build
+```
+
+Create a tenant. The answer contains its API key, **shown only once**:
+
+```bash
+curl -X POST http://localhost:5005/admin/tenants \
+  -H "X-Admin-Key: <the ADMIN_API_KEY from .env>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Demo"}'
+```
+
+Open http://localhost:3000, sign in with that key, add the endpoints `http://receiver:9000/ok` and
+`http://receiver:9000/fail`, and send a test event. One delivery succeeds; the other is retried with growing delays
+and finally gives up, and you can send it again from its page. `docker compose --profile demo logs -f receiver`
+shows what the receiver got, including the signature headers.
+
+```bash
+docker compose --profile demo down      # stop; add --volumes to also delete the data
+```
+
+The API and the panel are published on `localhost` only, and PostgreSQL is not published at all. The panel sets a
+`Secure` cookie, which browsers accept on `http://localhost` but not on another host name: to use it from other
+machines, put it behind HTTPS. Compose needs the two secrets for every command, `down` included, so keep them in
+`.env`. How the containers are built and what is checked is in
+[ADR 0008](docs/decisions/0008-containers.md); `scripts/smoke.sh` runs those checks.
+
 ## Stack
 
 - .NET (ASP.NET Core, background worker), EF Core
 - PostgreSQL (queue via `FOR UPDATE SKIP LOCKED`)
 - Next.js + TypeScript admin dashboard
-- Docker Compose, GitHub Actions
+- Docker (one command starts everything), GitHub Actions
 - Later: RabbitMQ transport, SQL Server support, Azure deployment
 
 ## Layout
@@ -36,14 +79,21 @@ src/WebhookService.Worker          delivery worker
 tests/WebhookService.Tests         tests
 web                                admin panel (Next.js)
 docs/decisions                     architecture decision records
+Dockerfile, web/Dockerfile         container images (API, worker, panel)
+docker-compose.yml                 the whole service; docker-compose.dev.yml is only the database
+demo/receiver.js                   a receiver to try the service against
+scripts/smoke.sh                   builds and runs everything and checks it (also run in CI)
 ```
 
-## Run locally
+## Run locally (for working on the code)
+
+This starts only the database in Docker; the programs run on your machine. To run the whole service, see
+[Try it](#try-it) above.
 
 Requirements: .NET 8 SDK, Docker.
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.dev.yml up -d
 dotnet build
 dotnet test
 dotnet run --project src/WebhookService.Api
@@ -234,6 +284,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
 - [x] v0.2 CI, API-key auth, SSRF protection, Next.js admin panel
+- [x] v0.2.1 one-command start with Docker Compose, demo receiver, smoke test in CI
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide

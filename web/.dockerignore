@@ -1,0 +1,12 @@
+# Keeps the build context small and keeps local files out of the image.
+node_modules/
+.next/
+.git/
+coverage/
+*.tsbuildinfo
+
+# Secrets and local settings never go into an image.
+.env
+.env.*
+!.env.example
+AGENTS.md

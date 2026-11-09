@@ -1,0 +1,24 @@
+# Keeps the build context small and keeps local files out of the images.
+**/bin/
+**/obj/
+**/node_modules/
+**/.next/
+**/.git/
+.git/
+.github/
+tests/
+web/
+demo/
+docs/
+reports/
+research_notes/
+
+# Secrets and local settings never go into an image.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/appsettings.Development.json
+**/*.user

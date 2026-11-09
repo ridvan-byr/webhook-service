@@ -39,6 +39,21 @@ jobs:
       - name: Test
         run: dotnet test --configuration Release --no-build --verbosity normal
 
+  # Builds the container images and runs the whole service: the API, the worker, the panel and PostgreSQL.
+  # It checks that an event reaches a receiver with a signature, that the panel is up and protected, that the
+  # database is not published, and that nothing runs as root. See scripts/smoke.sh.
+  docker:
+    name: docker compose smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Build and test the whole service
+        run: bash scripts/smoke.sh
+
   web:
     name: web (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
