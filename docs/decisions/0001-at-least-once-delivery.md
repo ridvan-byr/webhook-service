@@ -25,5 +25,7 @@ version.
 
 - No extra infrastructure (broker) is needed for v0.1.
 - Receivers must be idempotent.
-- The queue is behind an interface, so RabbitMQ or Kafka transports can be added
-  later without changing the core.
+- ~~The queue is behind an interface, so RabbitMQ or Kafka transports can be added
+  later without changing the core.~~ **Correction:** this was never true of the code. The queue is the
+  `deliveries` table itself and the worker claims rows with raw SQL; there is no queue interface. Making the
+  transport replaceable is real work, and it is designed in [ADR 0010](0010-rabbitmq-transport.md).
