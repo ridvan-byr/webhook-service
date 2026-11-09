@@ -32,6 +32,8 @@
     <ProjectReference Include="..\..\src\WebhookService.Core\WebhookService.Core.csproj" />
     <ProjectReference Include="..\..\src\WebhookService.Infrastructure\WebhookService.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\WebhookService.Api\WebhookService.Api.csproj" />
+    <!-- The loop of the worker process is tested as it runs, as a background service. -->
+    <ProjectReference Include="..\..\src\WebhookService.Worker\WebhookService.Worker.csproj" />
   </ItemGroup>
 
 </Project>

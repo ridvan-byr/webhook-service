@@ -7,11 +7,10 @@ using WebhookService.Infrastructure.Persistence;
 namespace WebhookService.Infrastructure.Dispatch;
 
 /// <summary>
-/// Claims due deliveries, sends them, and records what happened.
+/// Attempts one delivery that this worker has claimed, and records what happened.
 ///
-/// Claiming is the part that makes several workers safe: rows are locked with
-/// "FOR UPDATE SKIP LOCKED", so a row that another worker is claiming is skipped instead of
-/// waited for, and no two workers ever receive the same delivery.
+/// It does not care how the delivery reached the worker (see <see cref="IDeliverySource"/>): it sends the request,
+/// checks that this attempt still owns the delivery, records the attempt and moves the delivery to its next state.
 /// </summary>
 public sealed class DeliveryProcessor
 {
@@ -19,7 +18,6 @@ public sealed class DeliveryProcessor
     private readonly WebhookSender _sender;
     private readonly TimeProvider _time;
     private readonly IJitter _jitter;
-    private readonly DeliveryOptions _options;
     private readonly RetryPolicy _retryPolicy;
     private readonly ILogger<DeliveryProcessor> _logger;
 
@@ -35,61 +33,12 @@ public sealed class DeliveryProcessor
         _sender = sender;
         _time = time;
         _jitter = jitter;
-        _options = options.Value;
-        _options.EnsureValid();
-        _retryPolicy = _options.ToRetryPolicy();
+        options.Value.EnsureValid();
+        _retryPolicy = options.Value.ToRetryPolicy();
         _logger = logger;
     }
 
-    /// <returns>How many deliveries were claimed. Zero means there is nothing to do right now.</returns>
-    public async Task<int> ProcessBatchAsync(CancellationToken ct)
-    {
-        var claimed = await ClaimAsync(ct);
-        if (claimed.Count == 0)
-        {
-            return 0;
-        }
-
-        await Parallel.ForEachAsync(
-            claimed,
-            new ParallelOptions { MaxDegreeOfParallelism = _options.MaxParallelism, CancellationToken = ct },
-            async (claim, token) => await DeliverAsync(claim, token));
-
-        return claimed.Count;
-    }
-
-    private sealed record Claim(Guid DeliveryId, int AttemptNumber);
-
-    private async Task<List<Claim>> ClaimAsync(CancellationToken ct)
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-
-        var now = _time.GetUtcNow();
-
-        // Due: waiting for its time, or claimed by a worker whose claim has expired (it probably crashed).
-        var due = await db.Deliveries.FromSqlInterpolated($"""
-            SELECT * FROM deliveries
-            WHERE ("Status" = 'Pending' AND "NextAttemptAt" <= {now})
-               OR ("Status" = 'InProgress' AND "LockedUntil" <= {now})
-            ORDER BY "NextAttemptAt"
-            LIMIT {_options.BatchSize}
-            FOR UPDATE SKIP LOCKED
-            """).ToListAsync(ct);
-
-        // The state change itself is done by the domain model, so its rules are enforced here too.
-        foreach (var delivery in due)
-        {
-            delivery.StartAttempt(now, _options.LockDuration);
-        }
-
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-
-        return due.Select(d => new Claim(d.Id, d.AttemptCount)).ToList();
-    }
-
-    private async Task DeliverAsync(Claim claim, CancellationToken ct)
+    public async Task DeliverAsync(DeliveryClaim claim, CancellationToken ct)
     {
         await using var db = await _dbFactory.CreateDbContextAsync(ct);
 

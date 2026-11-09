@@ -6,8 +6,16 @@ namespace WebhookService.Tests.Dispatch;
 public sealed class TestClock : TimeProvider
 {
     private DateTimeOffset _now = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+    private int _reads;
 
-    public override DateTimeOffset GetUtcNow() => _now;
+    /// <summary>How many times the time was asked for. A worker asks once for every round of claiming.</summary>
+    public int Reads => Volatile.Read(ref _reads);
+
+    public override DateTimeOffset GetUtcNow()
+    {
+        Interlocked.Increment(ref _reads);
+        return _now;
+    }
 
     public void Advance(TimeSpan by) => _now += by;
 }
