@@ -120,6 +120,15 @@ describe("delivery page", () => {
     expect(screen.getByRole(role)).toHaveTextContent(text);
   });
 
+  it.each(["Dead", "Succeeded"])("stops saying it was queued once the delivery is %s again", async (status) => {
+    // The note comes from the address, which stays the same while the page refreshes by itself.
+    mocks.getDelivery.mockResolvedValue({ ok: true, data: detail(status) });
+
+    await show("ok");
+
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("ignores any other value in the address instead of printing it", async () => {
     mocks.getDelivery.mockResolvedValue({ ok: true, data: detail() });
 

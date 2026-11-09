@@ -28,12 +28,17 @@ export function apiGet<T>(path: string, options: ApiCallOptions): Promise<ApiRes
   return request<T>("GET", path, options);
 }
 
-/** Asks the API to do something (nothing the panel does needs a body). Same guarantees as apiGet. */
-export function apiPost<T>(path: string, options: ApiCallOptions): Promise<ApiResult<T>> {
-  return request<T>("POST", path, options);
+/** Asks the API to do something, optionally with a JSON body already written as text. Same guarantees as apiGet. */
+export function apiPost<T>(path: string, options: ApiCallOptions, body?: string): Promise<ApiResult<T>> {
+  return request<T>("POST", path, options, body);
 }
 
-async function request<T>(method: "GET" | "POST", path: string, options: ApiCallOptions): Promise<ApiResult<T>> {
+async function request<T>(
+  method: "GET" | "POST",
+  path: string,
+  options: ApiCallOptions,
+  body?: string,
+): Promise<ApiResult<T>> {
   if (!SAFE_PATH.test(path)) throw new Error("Invalid API path.");
 
   const fetchImpl = options.fetch ?? fetch;
@@ -42,7 +47,12 @@ async function request<T>(method: "GET" | "POST", path: string, options: ApiCall
   try {
     response = await fetchImpl(`${options.baseUrl}${path}`, {
       method,
-      headers: { Authorization: `Bearer ${options.apiKey}`, Accept: "application/json" },
+      headers: {
+        Authorization: `Bearer ${options.apiKey}`,
+        Accept: "application/json",
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body,
       cache: "no-store",
       redirect: "manual",
       signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),

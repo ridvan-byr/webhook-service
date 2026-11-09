@@ -41,7 +41,7 @@ export default async function DeliveryPage({ params, searchParams }: PageProps<"
       <PageHeading title={delivery.eventType} />
       <AutoRefresh />
 
-      {outcome === "ok" && (
+      {outcome === "ok" && (delivery.status === "Pending" || delivery.status === "InProgress") && (
         <p role="status" className="mb-4 rounded-md border border-line bg-surface px-3 py-2">
           Queued again. The worker will send it shortly.
         </p>

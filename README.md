@@ -174,7 +174,8 @@ the second line of defence, not the first.
 A Next.js application in [`web/`](web). Work in progress: so far it is the frame (menu, light and dark theme,
 security headers), signing in with a tenant's API key, and the deliveries screens: a list you can filter by status
 that refreshes every five seconds, and a page per delivery with every attempt and a button to send a dead
-delivery again. Endpoints and sending a test event come in the next steps.
+delivery again. A page per event shows its payload and what became of it, and a form sends a test event (the payload
+is sent exactly as typed, because the signature covers those characters). The endpoints screen comes in the next step.
 The design decisions, and why a few packages are pinned, are in
 [ADR 0007](docs/decisions/0007-admin-panel.md).
 

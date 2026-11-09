@@ -41,7 +41,14 @@ How it works:
   on each navigation, and a Server Action can be called without its page, so neither can rely on a check made
   elsewhere. An id from the address bar only becomes part of a path to the API after it is checked to be a
   real id, and a status filter is looked up in a fixed list instead of being passed on.
-- Everything shown on the deliveries screens (event types, endpoint addresses, errors, what a receiver
+- A test event is sent with the payload text exactly as typed, because the API signs the characters it receives.
+  `createEvent` writes that text into the request body itself instead of re-serialising it, so it first checks
+  that the text is exactly one JSON value that is not `null`; a crafted payload cannot add fields to the request.
+  The type and the key are written with `JSON.stringify`, so quotes and line breaks in them cannot do that either.
+  This was checked against the database: the stored payload keeps its odd spacing.
+- A missing page inside the signed-in screens renders inside the app shell, so `(app)/not-found.tsx` adds no
+  second `<main>`; the root `not-found.tsx` is for addresses no screen owns and brings its own.
+- Everything shown on the deliveries and event screens (event types, endpoint addresses, errors, what a receiver
   answered) was written by other systems, so it is only ever rendered as text.
 
 ### Content-Security-Policy with a nonce, no inline scripts or styles
