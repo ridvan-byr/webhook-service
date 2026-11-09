@@ -11,6 +11,7 @@ const MODULES_THAT_HANDLE_SECRETS = [
   "lib/api/client.ts",
   "lib/api/deliveries.ts",
   "lib/api/events.ts",
+  "lib/api/endpoints.ts",
   "lib/session/account.ts",
   "lib/session/api-access.ts",
   "lib/session/current.ts",

@@ -46,6 +46,15 @@ How it works:
   that the text is exactly one JSON value that is not `null`; a crafted payload cannot add fields to the request.
   The type and the key are written with `JSON.stringify`, so quotes and line breaks in them cannot do that either.
   This was checked against the database: the stored payload keeps its odd spacing.
+- The signing secret of a new endpoint exists on the panel's side only in the response to the action that made
+  the endpoint. It is held in the form's state, shown with a copy button, and gone when the visitor says it is
+  saved or leaves the page. It is never put in an address, a cookie, storage or the list page, which a real-browser
+  check confirmed (reloading shows no trace of it, not even in the HTML). Copying uses the browser's clipboard;
+  if the browser refuses, the panel says so and the secret can still be selected by hand. A successful copy was
+  verified in a unit test only, because the embedded browser used for checking denies clipboard access.
+- The address field is checked by the page and not by the browser (`noValidate`), so the message is ours, is tied
+  to the field and is read out by screen readers. Only a first look is done here; whether an address may be used
+  (HTTPS, no private networks) is decided by the API, and its refusal is explained in fixed words.
 - A missing page inside the signed-in screens renders inside the app shell, so `(app)/not-found.tsx` adds no
   second `<main>`; the root `not-found.tsx` is for addresses no screen owns and brings its own.
 - Everything shown on the deliveries and event screens (event types, endpoint addresses, errors, what a receiver

@@ -175,7 +175,8 @@ A Next.js application in [`web/`](web). Work in progress: so far it is the frame
 security headers), signing in with a tenant's API key, and the deliveries screens: a list you can filter by status
 that refreshes every five seconds, and a page per delivery with every attempt and a button to send a dead
 delivery again. A page per event shows its payload and what became of it, and a form sends a test event (the payload
-is sent exactly as typed, because the signature covers those characters). The endpoints screen comes in the next step.
+is sent exactly as typed, because the signature covers those characters). The endpoints screen lists your endpoints, switches each one on or off, and adds new ones: the signing secret of
+a new endpoint is shown once, in the response to adding it, and is never stored by the panel.
 The design decisions, and why a few packages are pinned, are in
 [ADR 0007](docs/decisions/0007-admin-panel.md).
 
