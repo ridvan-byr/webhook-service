@@ -1,6 +1,6 @@
 # 0010 - RabbitMQ as a delivery transport
 
-Status: proposed. Nothing in this document is built yet.
+Status: proposed. Step 1 of the plan (the seam) is built; the RabbitMQ transport itself is not.
 
 ## Context
 
@@ -206,11 +206,46 @@ Each step is its own pull request, in this order, because the first makes the ot
 1. **Extract the seam, no new behaviour.** `IDeliverySource` and `PostgresDeliverySource`; `DeliveryProcessor`
    keeps the delivery logic. The existing tests pass unchanged; the contract tests are parameterised with one
    transport. *Done when:* every existing test passes, and the two-workers test passes through the seam.
+   **Done**, see "What step 1 found" below.
 2. **Schema and relay.** `EnqueuedUntil`, the lease rule, the due query as its own tested unit. Nothing published yet.
 3. **The RabbitMQ transport.** Relay publishing with confirms, consumer, topology, settings, the Compose service
    (`--profile rabbitmq`), contract tests and the broker failure tests, smoke variant in CI.
 4. **Documentation and release.** README, changelog, the failure table checked against what the tests showed,
    `0.3.0`.
+
+## What step 1 found
+
+Written after the fact, as a record and not as part of the decision.
+
+**What was built.** `IDeliverySource` and `DeliveryClaim` (the private `Claim` made public);
+`PostgresDeliverySource` holds the claim SQL and the polling loop that used to be in `DeliveryWorker`;
+`DeliveryProcessor` is now only "attempt one delivery" (`DeliverAsync`); `DeliveryWorker` is a few lines that connect
+the two. The delivery tests became `DeliveryTransportContract`, an abstract class; `PostgresTransportTests` derives
+from it and says how to start a worker. They are unchanged apart from how the harness is created. A second transport
+adds one derived class and one driver.
+
+**The loop had no tests, so it was pinned before it was moved.** Six tests of the running background service (it
+delivers without being driven, asks again at once while busy, rests when idle and notices new work, survives a failing
+batch, stops promptly while resting and while pausing) passed against the old code first. One did not, and that is
+the one change in behaviour: **stopping the worker during the pause after an error ended the task as cancelled and
+never wrote "Delivery worker stopped."** The exception for the cancelled wait was outside the `try`. A host swallows
+it at shutdown, so nobody had noticed. It is fixed and tested. To make the pause testable without a five second wait,
+it became a setting, `Delivery__ErrorBackoff`, with the same default (5 s).
+
+**Checking the tests by breaking the code found three more gaps** (17 deliberate breakages, 13 caught the first
+time), all closed before this was finished:
+
+- Removing `FOR UPDATE SKIP LOCKED` **did not fail any test.** The two-workers test depends on two claims overlapping
+  by chance. A deterministic test now holds a row's lock the way a worker in the middle of claiming would, and
+  checks that the claim skips the row instead of waiting.
+- Nothing checked `MaxParallelism`. A receiver that answers after a moment now measures how many requests overlap.
+- Nothing checked that an idle or failing worker rests and does not spin, or that stopping is not logged as an error.
+  The test clock counts how often it is asked for the time (a worker asks once per round), and the harness keeps what
+  was logged.
+
+One of the breakages (removing the `Commit` of the claim) made a test **loop for ever**: the loop that drains a
+worker only stops when it is handed nothing, and a claim that was never committed always hands something. That would
+have hung CI until its time limit. The loop now has a limit and fails instead.
 
 ## Limits and open questions
 

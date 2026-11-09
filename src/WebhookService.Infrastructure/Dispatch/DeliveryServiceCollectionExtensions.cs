@@ -49,6 +49,11 @@ public static class DeliveryServiceCollectionExtensions
 
         services.AddSingleton<DeliveryProcessor>();
 
+        // Where the work comes from. The polling source needs nothing but the database. It is registered as
+        // itself as well, because tests drive it one batch at a time.
+        services.AddSingleton<PostgresDeliverySource>();
+        services.AddSingleton<IDeliverySource>(serviceProvider => serviceProvider.GetRequiredService<PostgresDeliverySource>());
+
         return services;
     }
 }

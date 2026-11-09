@@ -1,23 +1,29 @@
 using System.Text;
 using WebhookService.Core.Domain;
 using WebhookService.Core.Signing;
-using WebhookService.Tests.Persistence;
+using WebhookService.Infrastructure.Dispatch;
 
 namespace WebhookService.Tests.Dispatch;
 
-[Collection(PostgresCollection.Name)]
-public class DeliveryProcessorTests
+/// <summary>
+/// What every way of carrying deliveries to a worker has to keep promising: the exact payload and a valid signature,
+/// a retry that is not sent before its time, a dead delivery that is never sent again, receivers that are slow or
+/// unreachable, a crashed worker's delivery picked up after its lock, and two workers never sending the same delivery.
+///
+/// A transport is tested by deriving from this class and saying how to start a harness for it
+/// (<see cref="CreateHarnessAsync"/>); every test here then runs against it.
+/// </summary>
+public abstract class DeliveryTransportContract
 {
-    private readonly PostgresFixture _postgres;
-
-    public DeliveryProcessorTests(PostgresFixture postgres) => _postgres = postgres;
+    /// <summary>Starts a worker on its own empty database, using the transport under test.</summary>
+    protected abstract Task<DispatchHarness> CreateHarnessAsync(Action<DeliveryOptions>? configure = null);
 
     [Fact]
     public async Task A_successful_delivery_sends_the_exact_payload_with_a_valid_signature()
     {
         const string payload = "{ \"id\":   42,  \"note\": \"çok güzel\" }";
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres);
+        await using var h = await CreateHarnessAsync();
         var seeded = await h.SeedAsync($"{receiver.BaseUrl}/ok", payload);
 
         var claimed = await h.Processor.ProcessBatchAsync(default);
@@ -47,7 +53,7 @@ public class DeliveryProcessorTests
     public async Task A_failing_receiver_causes_a_recorded_attempt_and_a_scheduled_retry()
     {
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres);
+        await using var h = await CreateHarnessAsync();
         var seeded = await h.SeedAsync($"{receiver.BaseUrl}/fail");
 
         await h.Processor.ProcessBatchAsync(default);
@@ -69,7 +75,7 @@ public class DeliveryProcessorTests
     public async Task A_retry_is_not_sent_before_its_time()
     {
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres);
+        await using var h = await CreateHarnessAsync();
         await h.SeedAsync($"{receiver.BaseUrl}/fail");
 
         await h.Processor.ProcessBatchAsync(default);
@@ -88,7 +94,7 @@ public class DeliveryProcessorTests
     public async Task After_all_attempts_the_delivery_is_dead_and_never_sent_again()
     {
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres); // MaxAttempts = 3
+        await using var h = await CreateHarnessAsync(); // MaxAttempts = 3
         var seeded = await h.SeedAsync($"{receiver.BaseUrl}/fail");
 
         for (var i = 0; i < 3; i++)
@@ -107,11 +113,50 @@ public class DeliveryProcessorTests
         Assert.Equal(3, receiver.Requests.Count);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task A_worker_sends_no_more_requests_at_the_same_time_than_it_is_allowed_to(int parallelism)
+    {
+        await using var receiver = await TestReceiver.StartAsync();
+        await using var h = await CreateHarnessAsync(o =>
+        {
+            o.BatchSize = 6;
+            o.MaxParallelism = parallelism;
+        });
+        for (var i = 0; i < 6; i++)
+        {
+            await h.SeedAsync($"{receiver.BaseUrl}/hold");
+        }
+
+        Assert.Equal(6, await h.Processor.ProcessBatchAsync(default));
+
+        // Six requests were due and each takes a moment, so the most that overlapped is the limit itself.
+        Assert.Equal(parallelism, receiver.MaxConcurrent);
+    }
+
+    [Fact]
+    public async Task A_worker_takes_no_more_than_one_batch_at_a_time()
+    {
+        await using var receiver = await TestReceiver.StartAsync();
+        await using var h = await CreateHarnessAsync(o => o.BatchSize = 2);
+        for (var i = 0; i < 5; i++)
+        {
+            await h.SeedAsync($"{receiver.BaseUrl}/ok");
+        }
+
+        Assert.Equal(2, await h.Processor.ProcessBatchAsync(default));
+        Assert.Equal(2, await h.Processor.ProcessBatchAsync(default));
+        Assert.Equal(1, await h.Processor.ProcessBatchAsync(default));
+        Assert.Equal(0, await h.Processor.ProcessBatchAsync(default));
+        Assert.Equal(5, receiver.Requests.Count);
+    }
+
     [Fact]
     public async Task A_receiver_that_is_too_slow_counts_as_a_failure()
     {
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres, o => o.RequestTimeout = TimeSpan.FromMilliseconds(500));
+        await using var h = await CreateHarnessAsync(o => o.RequestTimeout = TimeSpan.FromMilliseconds(500));
         var seeded = await h.SeedAsync($"{receiver.BaseUrl}/slow");
 
         await h.Processor.ProcessBatchAsync(default);
@@ -127,7 +172,7 @@ public class DeliveryProcessorTests
     [Fact]
     public async Task A_receiver_that_cannot_be_reached_counts_as_a_failure()
     {
-        await using var h = await DispatchHarness.CreateAsync(_postgres);
+        await using var h = await CreateHarnessAsync();
         var seeded = await h.SeedAsync("http://127.0.0.1:1/hook"); // nothing listens on port 1
 
         await h.Processor.ProcessBatchAsync(default);
@@ -144,7 +189,7 @@ public class DeliveryProcessorTests
     public async Task Redirects_are_not_followed()
     {
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres);
+        await using var h = await CreateHarnessAsync();
         var seeded = await h.SeedAsync($"{receiver.BaseUrl}/redirect");
 
         await h.Processor.ProcessBatchAsync(default);
@@ -162,7 +207,7 @@ public class DeliveryProcessorTests
     public async Task An_inactive_endpoint_receives_nothing_and_the_attempt_is_recorded()
     {
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres);
+        await using var h = await CreateHarnessAsync();
         var seeded = await h.SeedAsync($"{receiver.BaseUrl}/ok", active: false);
 
         await h.Processor.ProcessBatchAsync(default);
@@ -176,7 +221,7 @@ public class DeliveryProcessorTests
     public async Task A_delivery_abandoned_by_a_crashed_worker_is_picked_up_after_its_lock_expires()
     {
         await using var receiver = await TestReceiver.StartAsync();
-        await using var h = await DispatchHarness.CreateAsync(_postgres); // lock lasts 1 minute
+        await using var h = await CreateHarnessAsync(); // lock lasts 1 minute
         var seeded = await h.SeedAsync($"{receiver.BaseUrl}/ok");
 
         // Simulate a worker that claimed the delivery and then died without reporting back.
@@ -203,7 +248,7 @@ public class DeliveryProcessorTests
     {
         const int total = 30;
         await using var receiver = await TestReceiver.StartAsync();
-        await using var first = await DispatchHarness.CreateAsync(_postgres, o => o.BatchSize = 3);
+        await using var first = await CreateHarnessAsync(o => o.BatchSize = 3);
         await using var second = first.CreateSecondWorker();
 
         var seeded = new List<Seeded>();
@@ -214,11 +259,18 @@ public class DeliveryProcessorTests
 
         async Task<int> Drain(DispatchHarness worker)
         {
+            // A claim that never runs out of work would spin for ever and hang the whole test run (and CI with it),
+            // so the loop has a limit and fails instead.
+            var deadline = DateTime.UtcNow.AddSeconds(30);
             var handled = 0;
             int claimed;
             while ((claimed = await worker.Processor.ProcessBatchAsync(default)) > 0)
             {
                 handled += claimed;
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new TimeoutException($"The worker was still being handed work after {handled} deliveries.");
+                }
             }
 
             return handled;
@@ -240,19 +292,5 @@ public class DeliveryProcessorTests
             Assert.Equal(DeliveryStatus.Succeeded, delivery.Status);
             Assert.Equal(1, delivery.AttemptCount);
         }
-    }
-
-    [Fact]
-    public async Task Misconfigured_options_are_rejected()
-    {
-        // A lock shorter than the request timeout would let a second worker take over a slow request.
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await using var h = await DispatchHarness.CreateAsync(_postgres, o =>
-            {
-                o.RequestTimeout = TimeSpan.FromSeconds(30);
-                o.LockDuration = TimeSpan.FromSeconds(10);
-            });
-        });
     }
 }

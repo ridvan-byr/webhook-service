@@ -5,8 +5,20 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 
 ## [Unreleased]
 
+### Added
+
+- `Delivery__ErrorBackoff` (default 5 seconds, as before): how long the worker waits after a batch failed.
+
+### Changed
+
+- Internal: the polling and claiming of due deliveries moved out of the worker into `PostgresDeliverySource`
+  behind a new `IDeliverySource`, the first step towards a RabbitMQ transport
+  ([ADR 0010](docs/decisions/0010-rabbitmq-transport.md)). Behaviour is unchanged apart from the fix below.
+
 ### Fixed
 
+- Stopping the worker while it was pausing after a failed batch ended its task as cancelled and did not log that it
+  had stopped. It now stops cleanly.
 - Documentation: the README and ADR 0001 said the queue is behind an interface. It is not: the `deliveries` table is
   the queue and the worker claims rows with SQL. Both are corrected, and the work needed to make the transport
   replaceable (for RabbitMQ) is designed in [ADR 0010](docs/decisions/0010-rabbitmq-transport.md).

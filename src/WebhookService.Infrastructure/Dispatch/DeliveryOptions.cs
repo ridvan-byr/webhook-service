@@ -24,6 +24,9 @@ public sealed class DeliveryOptions
     /// <summary>How long the worker sleeps when there is nothing to do.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>How long the worker waits after a batch failed (for example the database was unreachable).</summary>
+    public TimeSpan ErrorBackoff { get; set; } = TimeSpan.FromSeconds(5);
+
     public int MaxAttempts { get; set; } = RetryPolicy.Default.MaxAttempts;
 
     public TimeSpan BaseDelay { get; set; } = RetryPolicy.Default.BaseDelay;
@@ -47,6 +50,11 @@ public sealed class DeliveryOptions
         if (MaxAttempts < 1)
         {
             throw new InvalidOperationException("Delivery:MaxAttempts must be at least 1.");
+        }
+
+        if (ErrorBackoff <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("Delivery:ErrorBackoff must be positive.");
         }
 
         if (RequestTimeout <= TimeSpan.Zero)
