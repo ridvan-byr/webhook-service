@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The tests look at how many clients the failure limiter remembers. -->
+    <InternalsVisibleTo Include="WebhookService.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\WebhookService.Core\WebhookService.Core.csproj" />
     <ProjectReference Include="..\WebhookService.Infrastructure\WebhookService.Infrastructure.csproj" />
   </ItemGroup>

@@ -34,7 +34,7 @@ public abstract class ApiTestBase : IDisposable
 
     protected Guid Tenant { get; }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         Client.Dispose();
         Factory.Dispose();

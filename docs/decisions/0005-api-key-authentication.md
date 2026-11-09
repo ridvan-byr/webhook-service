@@ -61,7 +61,8 @@ secret comparison, the revoked check, the default-deny policy and the admin key 
 
 - Events, endpoints and deliveries still carry a plain tenant id without a foreign key to the
   `tenants` table. Only `api_keys` has one.
-- There is no rate limiting or throttling of failed attempts yet.
+- There was no rate limiting or throttling of failed attempts when this was written. It was added later, see
+  [ADR 0009](0009-failed-authentication-limit.md).
 - There is no `last used` tracking: it would add a database write to every request.
 - A lost key cannot be recovered. The tenant creates a new one and revokes the old one.
 - A lost admin key means changing the configuration and restarting.

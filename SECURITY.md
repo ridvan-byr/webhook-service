@@ -36,7 +36,8 @@ to make the service connect to an address it should refuse (the protections of
   can be reached from outside.
 - Weaknesses that are already listed as known limitations in the [README](README.md#known-limitations) and the
   [changelog](CHANGELOG.md), unless you found a way to make them worse than described. At the time of writing this
-  includes the missing rate limiting.
+  includes that requests with a valid key are not rate limited (failed attempts are, see
+  [ADR 0009](docs/decisions/0009-failed-authentication-limit.md)).
 - Findings that only apply to an old version, or to software this project depends on (report those to the project
   that owns them).
 

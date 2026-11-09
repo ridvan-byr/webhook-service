@@ -83,4 +83,19 @@ for service in api worker web; do
   [ "$user" != 0 ] || fail "$service runs as root"
 done
 
+# Last, because a client that has been refused gets no answer about keys for a minute, valid ones included.
+step "Too many failed attempts are refused"
+wrong='whk_000000000000_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+refused_at=""
+for i in $(seq 1 40); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $wrong" "$API/deliveries")
+  if [ "$code" = 429 ]; then refused_at=$i; break; fi
+  [ "$code" = 401 ] || fail "a wrong key gave $code on attempt $i, expected 401 or 429"
+done
+# The default is 20 failures a minute, so the 21st attempt is the first one refused.
+[ "$refused_at" = 21 ] || fail "wrong keys were first refused with 429 at attempt '${refused_at:-never}', expected 21"
+retry=$(curl -s -D - -o /dev/null -H "Authorization: Bearer $wrong" "$API/deliveries" | grep -i '^retry-after:' | tr -d '\r' | awk '{print $2}')
+{ [ -n "$retry" ] && [ "$retry" -ge 1 ] && [ "$retry" -le 60 ]; } || fail "no sensible Retry-After header (got '${retry:-none}')"
+curl -fsS "$API/health" >/dev/null || fail "the health check was refused for a client over the limit"
+
 printf '\nAll checks passed.\n'

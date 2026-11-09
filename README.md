@@ -259,8 +259,10 @@ the second line of defence, not the first.
 
 ### Known limitations
 
-- No rate limiting, so keys could be guessed by brute force (the 256-bit secret makes that
-  impractical, but failed attempts are not throttled or logged yet).
+- Only failed attempts to authenticate are limited (20 a minute per client by default, and the panel's sign-in
+  10 a minute; [ADR 0009](docs/decisions/0009-failed-authentication-limit.md)). A valid tenant can still send as
+  many requests and events as it likes. The count is kept in memory, so each running copy of the API counts for
+  itself and it starts again with the process.
 - A public address can still belong to the operator's own infrastructure, and ports are not restricted.
 - No event-type filtering per endpoint.
 - Switching an endpoint back on does not check its address again. The check made when the worker connects still
