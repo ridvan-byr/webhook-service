@@ -19,7 +19,8 @@ describe("EndpointsTable", () => {
 
     const table = screen.getByRole("table", { name: "Endpoints" });
 
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Address", "Status", "Added", "Action"]);
+    // The state and its button come before the date, so both are on screen on a phone, where the table scrolls sideways.
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Address", "Status", "Action", "Added"]);
   });
 
   it("shows the address, the state in words and the time in UTC", () => {

@@ -25,7 +25,8 @@ describe("DeliveriesTable", () => {
     const table = screen.getByRole("table", { name: "Deliveries" });
     const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
 
-    expect(headers).toEqual(["Event", "Endpoint", "Status", "Attempts", "Created", "Next attempt"]);
+    // Status comes second so that it is still on screen on a phone, where the table scrolls sideways.
+    expect(headers).toEqual(["Event", "Status", "Endpoint", "Attempts", "Created", "Next attempt"]);
   });
 
   it("shows what a delivery is about in one row, with times in UTC", () => {

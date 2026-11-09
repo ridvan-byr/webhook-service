@@ -1,7 +1,8 @@
 import type { Endpoint } from "@/lib/api/endpoints";
 import { formatUtc } from "@/lib/format";
 
-const HEADERS = ["Address", "Status", "Added", "Action"];
+// The state and its button come before the date, so both are on screen on a phone, where the table scrolls sideways.
+const HEADERS = ["Address", "Status", "Action", "Added"];
 const STROKE = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
 function ActiveChip({ isActive }: { isActive: boolean }) {
@@ -44,11 +45,10 @@ export function EndpointsTable({
         <tbody>
           {endpoints.map((endpoint) => (
             <tr key={endpoint.id} className="border-b border-line last:border-b-0">
-              <td className="break-all px-3 py-2">{endpoint.url}</td>
+              <td className="min-w-[12rem] break-all px-3 py-2">{endpoint.url}</td>
               <td className="px-3 py-2">
                 <ActiveChip isActive={endpoint.isActive} />
               </td>
-              <td className="whitespace-nowrap px-3 py-2">{formatUtc(endpoint.createdAt)}</td>
               <td className="px-3 py-2">
                 <form action={setActive.bind(null, endpoint.id, !endpoint.isActive)}>
                   <button
@@ -60,6 +60,7 @@ export function EndpointsTable({
                   </button>
                 </form>
               </td>
+              <td className="whitespace-nowrap px-3 py-2">{formatUtc(endpoint.createdAt)}</td>
             </tr>
           ))}
         </tbody>

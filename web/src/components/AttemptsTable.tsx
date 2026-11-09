@@ -26,7 +26,7 @@ export function AttemptsTable({ attempts }: { attempts: Attempt[] }) {
               <td className="px-3 py-2">{index + 1}</td>
               <td className="whitespace-nowrap px-3 py-2">{formatUtc(attempt.startedAt)}</td>
               <td className="whitespace-nowrap px-3 py-2">{formatDuration(attempt.durationMs)}</td>
-              <td className="px-3 py-2">
+              <td className="min-w-[14rem] px-3 py-2">
                 {attempt.responseStatus !== null && <div className="font-medium">{`HTTP ${attempt.responseStatus}`}</div>}
                 {attempt.error && <div>{attempt.error}</div>}
                 {attempt.responseSnippet && (
