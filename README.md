@@ -2,10 +2,14 @@
 
 [![CI](https://github.com/ridvan-byr/webhook-service/actions/workflows/ci.yml/badge.svg)](https://github.com/ridvan-byr/webhook-service/actions/workflows/ci.yml)
 
-A self-hostable service that delivers webhooks reliably: signed requests,
-retries with backoff, a dead-letter state, and a full delivery history.
+A self-hostable service that delivers webhooks reliably, with an admin panel to see what happened to every
+delivery. Your application sends an event once. The service signs it, delivers it to every receiver you registered,
+retries failures with growing delays, and keeps the full history, so a failed delivery can be found and sent again.
 
-> Status: the API, the worker and the admin panel work end to end. Nothing here has been run in production yet.
+![The deliveries list of the admin panel](docs/images/deliveries.png)
+
+> Status: the API, the worker and the admin panel work end to end, and `docker compose up` starts all of it. Nothing
+> here has been run in production yet. Changes are listed in the [changelog](CHANGELOG.md).
 
 ## Why
 
@@ -17,6 +21,47 @@ written down in [`docs/decisions`](docs/decisions).
 
 It is a learning and portfolio project. Hosted and mature alternatives such as
 Svix exist; this project does not try to replace them.
+
+## What it does
+
+- **Reliable delivery.** At-least-once: an accepted event is never lost, because it and its deliveries are written
+  in one database transaction ([ADR 0001](docs/decisions/0001-at-least-once-delivery.md)). Failures are retried with
+  exponential backoff and jitter; after the last attempt a delivery is `Dead` and can be sent again by hand.
+- **Several workers at once.** Workers claim due deliveries with `FOR UPDATE SKIP LOCKED`, so none is taken twice.
+  A test runs two workers over 30 deliveries and checks that each is claimed exactly once
+  ([ADR 0004](docs/decisions/0004-delivery-worker.md)).
+- **Signed requests.** Every request carries `Webhook-Id`, `Webhook-Timestamp` and an HMAC-SHA256 `Webhook-Signature`,
+  and the payload is stored and sent exactly as it was received. The id is stable, so receivers can ignore a repeat.
+- **Idempotent intake.** Sending the same `Idempotency-Key` again never creates a second event.
+- **Several tenants.** Each tenant has its own API keys (stored as hashes, compared in constant time) and only ever
+  sees its own data ([ADR 0005](docs/decisions/0005-api-key-authentication.md)).
+- **Safe to point at the internet.** The service connects only to public HTTPS addresses unless you allow otherwise,
+  and checks the address at the moment it connects, so it cannot be used to reach internal systems
+  ([ADR 0006](docs/decisions/0006-ssrf-protection.md)).
+- **An admin panel** for deliveries, events and endpoints, with a security design of its own
+  ([ADR 0007](docs/decisions/0007-admin-panel.md)).
+
+## How it works
+
+```mermaid
+flowchart LR
+    App["Your application"] -->|"POST /events (API key)"| API["API (ASP.NET Core)"]
+    Browser["Browser"] --> Panel["Admin panel (Next.js)"]
+    Panel -->|"API key from an encrypted cookie"| API
+    API -->|"event and deliveries, one transaction"| DB[("PostgreSQL")]
+    Worker["Worker"] -->|"claims due deliveries"| DB
+    Worker -->|"signed POST, retried with backoff"| Receiver["Your receiver"]
+```
+
+1. Your application sends an event to the API with its API key. The API stores the event and one delivery per active
+   endpoint, in a single transaction, and answers `202`.
+2. A worker claims each delivery that is due, signs the payload with the endpoint's secret and sends it.
+3. A `2xx` answer ends the delivery as `Succeeded`. Anything else schedules the next attempt later; when the attempts
+   run out the delivery is `Dead`.
+4. In the panel, the browser never sees the API key: the panel's own server calls the API for it.
+
+The PostgreSQL queue is behind an interface, so another transport (RabbitMQ is next on the roadmap) can be added
+without changing the core.
 
 ## Try it
 
@@ -218,6 +263,8 @@ the second line of defence, not the first.
   impractical, but failed attempts are not throttled or logged yet).
 - A public address can still belong to the operator's own infrastructure, and ports are not restricted.
 - No event-type filtering per endpoint.
+- Switching an endpoint back on does not check its address again. The check made when the worker connects still
+  applies, so a forbidden address is refused then, but it is not reported at the moment of switching on.
 
 ## Admin panel
 
@@ -283,8 +330,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 ## Roadmap
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
-- [x] v0.2 CI, API-key auth, SSRF protection, Next.js admin panel
-- [x] v0.2.1 one-command start with Docker Compose, demo receiver, smoke test in CI
+- [x] v0.2 CI, API-key auth, SSRF protection, Next.js admin panel, one-command start with Docker Compose
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide
