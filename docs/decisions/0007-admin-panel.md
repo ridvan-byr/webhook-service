@@ -18,7 +18,25 @@ Next.js server. After sign-in the key is kept in an encrypted, `httpOnly`, `Secu
 cookie (AES-256-GCM, secret from the `SESSION_SECRET` environment variable, absolute lifetime of 8 hours).
 JavaScript running in the page cannot read the key, so a cross-site scripting bug cannot steal it, and the API
 needs no CORS configuration. `API_BASE_URL` and `SESSION_SECRET` are server-only: never `NEXT_PUBLIC_*`.
-(The cookie and sign-in are not built yet; this describes the target.)
+
+How it works:
+
+- Signing in sends the pasted key to `GET /me`. Only if the API accepts it is the cookie set, and every key
+  the API turns down gets the same message, so the form tells an attacker nothing about keys.
+- The cookie holds `v1.<iv>.<ciphertext>.<tag>`. The key for AES-256-GCM is derived from `SESSION_SECRET`
+  with HKDF, the expiry sits inside the encrypted payload, and anything that does not decrypt, has been
+  changed or has run out is treated as signed out. In production the cookie is called `__Host-session`,
+  so a sibling subdomain cannot plant or overwrite it.
+- Every page asks the API `GET /me` again (once per request), so a revoked key stops working immediately.
+  An API outage shows a message but keeps the session; only a `401` ends it. A layout cannot remove a
+  cookie, so an ended session goes through `/session/expired`, a route that clears it and returns to `/login`.
+- `src/proxy.ts` only sends visitors without any session cookie to `/login`. It is a shortcut, not the check.
+- The API client (`src/lib/api/client.ts`) accepts only paths that continue the API's own address, does not
+  follow redirects, never caches, times out after 10 seconds and returns only a kind of failure, never the
+  key or what the API wrote.
+- Signing out overwrites the cookie with the same attributes. `cookies().delete` is not enough: a browser
+  ignores a change to a `__Host-` cookie that is not `Secure`, which a real-browser test showed (the session
+  survived a sign-out) and a unit test now covers.
 
 ### Content-Security-Policy with a nonce, no inline scripts or styles
 
@@ -76,8 +94,11 @@ and the pins above.
 
 ## Limits
 
-- The sign-in page will be one more place where keys can be guessed, and the API has no rate limiting.
+- The sign-in page is one more place where keys can be guessed, and neither it nor the API has rate limiting.
   With a 256-bit secret this is impractical, but failed attempts are not throttled.
+- Changing `SESSION_SECRET` signs everybody out. There is no rotation with two secrets at once.
+- A signed-out session cannot be revoked on the server: the cookie is the session. Signing out forgets it in
+  this browser; to cut off a copy of the cookie, revoke the key in the API.
 - A stolen session cookie works for up to 8 hours. The key can be revoked in the API at any time.
 - The CSP check was verified with a real browser: a normal page load logs no violations and an injected inline
   event handler is blocked. An injected `<script>` created from trusted code is allowed to run by

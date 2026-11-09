@@ -72,6 +72,28 @@ describe("AppShell", () => {
     expect(skip).toHaveAttribute("href", "#main");
   });
 
+  it("shows no account and no sign-out button when it is not told whose panel this is", () => {
+    renderShell();
+
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  });
+
+  it("shows whose account it is and signs out with a button, not a link", async () => {
+    const signOut = vi.fn();
+    render(
+      <AppShell account={{ tenantName: "Acme", keyName: "ci-deploy" }} signOut={signOut}>
+        <h1>Page title</h1>
+      </AppShell>,
+    );
+
+    expect(screen.getByText("Acme")).toBeInTheDocument();
+    expect(screen.getByText("ci-deploy")).toBeInTheDocument();
+    // Signing out changes state, so it is a form with a button: a link could be triggered by a prefetch
+    // or by a page on another site.
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
   it("has no accessibility violations that can be detected without a rendering engine", async () => {
     const { container } = renderShell();
 
