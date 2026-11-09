@@ -31,22 +31,43 @@ internal static class AccountRoutes
     }
 
     private static async Task<IResult> CreateTenantAsync(
-        HttpRequest request,
+        HttpContext context,
         CreateTenantRequest body,
         IConfiguration configuration,
+        AuthFailureLimiter limiter,
+        ILoggerFactory loggers,
         ApiKeyService keys,
         CancellationToken ct)
     {
-        // No admin key configured means the feature is switched off. It looks like the route does not exist.
+        var request = context.Request;
+
+        // No admin key configured means the feature is switched off. It looks like the route does not exist,
+        // and there is nothing to guess, so nothing is counted.
         var adminKey = configuration["Admin:ApiKey"];
         if (string.IsNullOrWhiteSpace(adminKey))
         {
             return Results.NotFound();
         }
 
+        // The admin key is a secret that can be guessed like an API key, so it shares the limit.
+        var client = AuthFailureLimiter.ClientKey(context.Connection.RemoteIpAddress);
+        if (limiter.IsBlocked(client, out var retryAfter))
+        {
+            await RateLimitedResponse.WriteAsync(context.Response, retryAfter);
+            return Results.Empty;
+        }
+
         var provided = request.Headers[AdminKeyHeader].ToString();
         if (!ApiKeyGenerator.SecretsEqual(adminKey, provided))
         {
+            // A request without the header guessed nothing, so only a presented key counts.
+            if (!string.IsNullOrEmpty(provided) && limiter.RecordFailure(client))
+            {
+                loggers.CreateLogger("WebhookService.Api.Security.AdminKey").LogWarning(
+                    "Too many failed attempts to authenticate from {Client}. Further attempts are refused for a while.",
+                    client);
+            }
+
             return Results.Problem(
                 title: "Invalid admin key.",
                 statusCode: StatusCodes.Status401Unauthorized);

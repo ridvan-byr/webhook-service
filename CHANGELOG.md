@@ -3,6 +3,24 @@
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anything may still change.
 
+## [Unreleased]
+
+### Added
+
+- **A limit on failed attempts to authenticate.** A client that presents wrong API keys (or a wrong admin key) more
+  than 20 times in a minute gets `429 Too Many Requests` with `Retry-After`, and is not answered about keys at all
+  until the window has passed. The panel's sign-in form has its own, stricter limit (10 a minute) so it never makes
+  the API refuse the panel for everyone. Behind a reverse proxy, `Security__TrustedProxyNetworks__0` names the
+  networks whose `X-Forwarded-For` is believed. ([ADR 0009](docs/decisions/0009-failed-authentication-limit.md))
+
+### Security
+
+- The API and the panel now log once when a client reaches the limit, without what was presented.
+
+### Changed
+
+- The smoke test also checks that the 21st wrong key in a row is the first one refused.
+
 ## [0.2.0] - 2026-11-09
 
 The first release. Everything below is new.

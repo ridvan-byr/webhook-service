@@ -126,8 +126,10 @@ and the pins above.
 
 ## Limits
 
-- The sign-in page is one more place where keys can be guessed, and neither it nor the API has rate limiting.
-  With a 256-bit secret this is impractical, but failed attempts are not throttled.
+- The sign-in page is one more place where keys can be guessed. With a 256-bit secret this is impractical. Failed
+  attempts are limited, in the panel (10 a minute for the whole panel) and in the API (20 a minute per client);
+  see [ADR 0009](0009-failed-authentication-limit.md), including why the panel's count is one for everybody and what
+  that costs.
 - Changing `SESSION_SECRET` signs everybody out. There is no rotation with two secrets at once.
 - A signed-out session cannot be revoked on the server: the cookie is the session. Signing out forgets it in
   this browser; to cut off a copy of the cookie, revoke the key in the API.
