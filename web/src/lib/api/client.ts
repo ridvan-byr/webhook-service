@@ -33,8 +33,13 @@ export function apiPost<T>(path: string, options: ApiCallOptions, body?: string)
   return request<T>("POST", path, options, body);
 }
 
+/** Asks the API to change something, with a JSON body already written as text. Same guarantees as apiGet. */
+export function apiPatch<T>(path: string, options: ApiCallOptions, body: string): Promise<ApiResult<T>> {
+  return request<T>("PATCH", path, options, body);
+}
+
 async function request<T>(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PATCH",
   path: string,
   options: ApiCallOptions,
   body?: string,

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { apiGet, apiPost } from "@/lib/api/client";
+import { apiGet, apiPatch, apiPost } from "@/lib/api/client";
 
 const BASE = "http://api.test:5005";
 const KEY = "whk_0123456789ab_SECRETSECRETSECRETSECRETSECRETSECRETSECRET";
@@ -56,6 +56,36 @@ describe("apiPost", () => {
     const fetchImpl = reply(200);
 
     await expect(post(fetchImpl as unknown as typeof fetch, "//evil.example")).rejects.toThrow(/path/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("apiPatch", () => {
+  it("sends a PATCH with a JSON body, never cached and never following a redirect", async () => {
+    const fetchImpl = reply(200, { isActive: false });
+
+    const result = await apiPatch(
+      "/endpoints/1",
+      { baseUrl: BASE, apiKey: KEY, fetch: fetchImpl as unknown as typeof fetch },
+      '{"isActive":false}',
+    );
+
+    expect(result).toEqual({ ok: true, data: { isActive: false } });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://api.test:5005/endpoints/1");
+    expect(init.method).toBe("PATCH");
+    expect(init.body).toBe('{"isActive":false}');
+    expect(init.cache).toBe("no-store");
+    expect(init.redirect).toBe("manual");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
+
+  it("refuses a path that could lead somewhere else", async () => {
+    const fetchImpl = reply(200);
+
+    await expect(
+      apiPatch("//evil.example", { baseUrl: BASE, apiKey: KEY, fetch: fetchImpl as unknown as typeof fetch }, "{}"),
+    ).rejects.toThrow(/path/i);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
