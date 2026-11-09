@@ -38,3 +38,58 @@ jobs:
       # GitHub's Ubuntu runners have Docker installed, so no extra service is needed.
       - name: Test
         run: dotnet test --configuration Release --no-build --verbosity normal
+
+  web:
+    name: web (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 24 is a supported release. 20.18.0 is the Node that is installed on the author's machine: it
+        # reached end of life in April 2026 and some current tools no longer work on it, which is why a few
+        # packages are pinned (see docs/decisions/0007). Running it here means a dependency update that would
+        # break that machine turns this check red instead of passing unnoticed. Drop it when Node is upgraded.
+        node: ["24", "20.18.0"]
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # Packages that end up in the running panel are a risk to its users, so a known vulnerability in one
+      # of them fails the build.
+      - name: Audit (packages that ship)
+        run: npm run audit:prod
+
+      # Build and test tools never run for users. A new advisory about one of them is shown but does not
+      # block unrelated changes.
+      - name: Audit (build and test tools)
+        run: npm audit --audit-level=moderate
+        continue-on-error: true

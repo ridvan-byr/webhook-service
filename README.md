@@ -34,6 +34,7 @@ src/WebhookService.Infrastructure  persistence and transports
 src/WebhookService.Api             HTTP API
 src/WebhookService.Worker          delivery worker
 tests/WebhookService.Tests         tests
+web                                admin panel (Next.js)
 docs/decisions                     architecture decision records
 ```
 
@@ -168,6 +169,32 @@ the second line of defence, not the first.
 - A public address can still belong to the operator's own infrastructure, and ports are not restricted.
 - No event-type filtering per endpoint.
 
+## Admin panel
+
+A Next.js application in [`web/`](web). Work in progress: so far it is the frame (menu, light and dark theme,
+security headers). The screens that show your deliveries come in the next steps, and so does signing in.
+The design decisions, and why a few packages are pinned, are in
+[ADR 0007](docs/decisions/0007-admin-panel.md).
+
+Requirements: Node 20.9 or later. Node 20 reached end of life in April 2026, so Node 22 or 24 is recommended.
+
+```bash
+cd web
+npm ci
+npm run dev
+```
+
+Open http://localhost:3000. Configuration is read from `web/.env.local`; copy `web/.env.example` for the
+values that exist so far. They are read on the server only and are never sent to the browser.
+
+| Command | What it does |
+|---|---|
+| `npm test` | Unit and component tests (Vitest, React Testing Library, axe-core) |
+| `npm run lint` | ESLint with the strict `jsx-a11y` accessibility rules |
+| `npm run typecheck` | Generates the route types, then runs the TypeScript compiler |
+| `npm run build` | Production build |
+| `npm run audit:prod` | Fails on a known vulnerability in a package that ships with the panel |
+
 ### Database migrations
 
 The EF Core CLI is a local tool, restore it once:
@@ -185,7 +212,7 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 ## Roadmap
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
-- [ ] v0.2 CI (done), API-key auth (done), Next.js dashboard
+- [ ] v0.2 CI (done), API-key auth (done), SSRF protection (done), Next.js dashboard (frame done: sign-in, screens and data to come)
 - [ ] v0.3 RabbitMQ transport
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide
