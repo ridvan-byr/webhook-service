@@ -107,3 +107,33 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # The base images of the containers. New .NET and Node major versions are a decision, not an update: .NET 8
+  # is the version the code targets, and Node 24 is the one the panel is tested on, so only patch and minor
+  # updates of those arrive on their own.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "mcr.microsoft.com/dotnet/*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker
+    directory: /web
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+
+  # The images named in the compose files (PostgreSQL, and Node for the demo receiver).
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

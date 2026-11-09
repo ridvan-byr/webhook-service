@@ -1,12 +1,36 @@
+# The whole service: PostgreSQL, the API, the worker and the admin panel.
+#
+#   cp .env.example .env        # then set the two secrets in it
+#   docker compose up -d --build
+#
+# The panel is on http://localhost:3000 and the API on http://localhost:5005. Both are published on this
+# computer only. See the README for creating a tenant and signing in.
+#
+# Add --profile demo to also start a small receiver to send webhooks to (see .env.example).
+name: webhook-service
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  # Nothing here needs extra privileges.
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-delivery-security: &delivery-security
+  # Where webhooks may be sent. The defaults refuse plain http and private networks (see README).
+  Security__AllowPrivateNetworks: ${ALLOW_PRIVATE_NETWORKS:-false}
+  Security__RequireHttps: ${REQUIRE_HTTPS:-true}
+
 services:
   postgres:
+    # Not the shared defaults: the postgres image starts as root and drops to its own user, which needs a few
+    # capabilities that "cap_drop: ALL" would take away.
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
     image: postgres:16
     environment:
       POSTGRES_USER: webhooks
-      POSTGRES_PASSWORD: webhooks_dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-webhooks_dev_password}
       POSTGRES_DB: webhooks
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -14,6 +38,63 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  api:
+    <<: *service-defaults
+    build:
+      context: .
+      target: api
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=webhooks;Username=webhooks;Password=${POSTGRES_PASSWORD:-webhooks_dev_password}"
+      Database__MigrateOnStartup: "true"
+      # Creating tenants needs this key. Without it that route is switched off.
+      Admin__ApiKey: ${ADMIN_API_KEY:?Set ADMIN_API_KEY in .env (see .env.example)}
+      <<: *delivery-security
+    ports:
+      - "127.0.0.1:5005:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    <<: *service-defaults
+    build:
+      context: .
+      target: worker
+    environment:
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=webhooks;Username=webhooks;Password=${POSTGRES_PASSWORD:-webhooks_dev_password}"
+      <<: *delivery-security
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # The API creates the tables when it starts; the worker only reads and writes them.
+      api:
+        condition: service_started
+
+  web:
+    <<: *service-defaults
+    build:
+      context: ./web
+    environment:
+      API_BASE_URL: http://api:8080
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env (see .env.example)}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+
+  # A receiver to try the service against, without leaving this computer. It answers 200 on /ok and 500 on
+  # /fail, and prints what it got. Addresses on a private network are refused unless
+  # ALLOW_PRIVATE_NETWORKS=true is set in .env.
+  receiver:
+    <<: *service-defaults
+    profiles: ["demo"]
+    image: node:24-slim
+    user: node
+    working_dir: /demo
+    volumes:
+      - ./demo:/demo:ro
+    command: ["node", "receiver.js"]
 
 volumes:
   pgdata:
