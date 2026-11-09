@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildContentSecurityPolicy, createNonce } from "@/lib/csp";
+import { sessionCookie } from "@/lib/session/cookie";
+
+/** Pages that must be reachable without a session. */
+const PUBLIC_PATHS = new Set(["/login", "/session/expired"]);
 
 /**
  * Runs before every page request (in Next.js 16 this file replaces middleware.ts).
@@ -21,7 +25,14 @@ export function proxy(request: NextRequest) {
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", policy);
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  // Only an optimistic shortcut: a visitor who has no session cookie at all is sent to sign in without
+  // rendering anything. Whether a cookie is genuine is checked where it is used.
+  const cookieName = sessionCookie({ production: process.env.NODE_ENV === "production" }).name;
+  const needsSignIn = !PUBLIC_PATHS.has(request.nextUrl.pathname) && !request.cookies.has(cookieName);
+
+  const response = needsSignIn
+    ? NextResponse.redirect(new URL("/login", request.url))
+    : NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
 
   return response;

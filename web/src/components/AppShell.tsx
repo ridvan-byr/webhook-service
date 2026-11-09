@@ -8,7 +8,15 @@ const SCREENS = [
 ] as const;
 
 /** The frame around every page: a way to skip the menu, the menu, and the main area. */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  account,
+  signOut,
+}: {
+  children: ReactNode;
+  account?: { tenantName: string; keyName: string };
+  signOut?: () => void | Promise<void>;
+}) {
   return (
     <>
       <a
@@ -26,6 +34,20 @@ export function AppShell({ children }: { children: ReactNode }) {
               {screen.label}
             </NavLink>
           ))}
+          {account && signOut && (
+            <div className="ml-auto flex items-center gap-3 py-2 text-sm">
+              <span>
+                <span className="font-medium">{account.tenantName}</span>
+                <span aria-hidden="true"> · </span>
+                <span className="text-muted">{account.keyName}</span>
+              </span>
+              <form action={signOut}>
+                <button type="submit" className="rounded-md border border-line px-3 py-1.5 hover:bg-page">
+                  Sign out
+                </button>
+              </form>
+            </div>
+          )}
         </nav>
       </header>
 

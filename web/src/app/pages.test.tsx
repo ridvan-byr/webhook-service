@@ -1,8 +1,8 @@
-import { render, screen } from "@testing-library/react";
+﻿import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import DeliveriesPage from "@/app/deliveries/page";
-import EndpointsPage from "@/app/endpoints/page";
-import NewEventPage from "@/app/events/new/page";
+import DeliveriesPage from "@/app/(app)/deliveries/page";
+import EndpointsPage from "@/app/(app)/endpoints/page";
+import NewEventPage from "@/app/(app)/events/new/page";
 
 describe("the screens of the menu", () => {
   it.each([

@@ -172,7 +172,7 @@ the second line of defence, not the first.
 ## Admin panel
 
 A Next.js application in [`web/`](web). Work in progress: so far it is the frame (menu, light and dark theme,
-security headers). The screens that show your deliveries come in the next steps, and so does signing in.
+security headers) and signing in with a tenant's API key. The screens that show your deliveries come in the next steps.
 The design decisions, and why a few packages are pinned, are in
 [ADR 0007](docs/decisions/0007-admin-panel.md).
 
@@ -184,8 +184,9 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:3000. Configuration is read from `web/.env.local`; copy `web/.env.example` for the
-values that exist so far. They are read on the server only and are never sent to the browser.
+Open http://localhost:3000 and sign in with the API key of a tenant (see Authentication above). The panel needs the
+API running. Configuration is read from `web/.env.local`; copy `web/.env.example` and set `SESSION_SECRET`
+(the file says how to make one). They are read on the server only and are never sent to the browser.
 
 | Command | What it does |
 |---|---|
