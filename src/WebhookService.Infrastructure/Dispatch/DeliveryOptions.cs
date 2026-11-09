@@ -7,6 +7,9 @@ public sealed class DeliveryOptions
 {
     public const string SectionName = "Delivery";
 
+    /// <summary>How workers learn that a delivery is due. See ADR 0010.</summary>
+    public DeliveryTransport Transport { get; set; } = DeliveryTransport.Postgres;
+
     /// <summary>How many due deliveries one worker claims at a time.</summary>
     public int BatchSize { get; set; } = 20;
 
@@ -45,6 +48,11 @@ public sealed class DeliveryOptions
 
     public void EnsureValid()
     {
+        if (!Enum.IsDefined(Transport))
+        {
+            throw new InvalidOperationException("Delivery:Transport must be Postgres or RabbitMq.");
+        }
+
         if (BatchSize < 1)
         {
             throw new InvalidOperationException("Delivery:BatchSize must be at least 1.");
