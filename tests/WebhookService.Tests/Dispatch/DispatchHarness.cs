@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using WebhookService.Core.Domain;
 using WebhookService.Infrastructure.Dispatch;
+using WebhookService.Infrastructure.Dispatch.RabbitMq;
 using WebhookService.Infrastructure.Persistence;
 using WebhookService.Infrastructure.Security;
 using WebhookService.Tests.Persistence;
@@ -23,15 +24,21 @@ public sealed class DispatchHarness : IAsyncDisposable
     private readonly string _connectionString;
     private readonly Action<NetworkSecurityOptions>? _security;
     private readonly IHostResolver? _resolver;
+    private readonly Action<IServiceCollection>? _configureServices;
+    private readonly Func<DispatchHarness, BatchDriver>? _driverFactory;
 
     private DispatchHarness(
         string connectionString,
         TestClock clock,
         Action<DeliveryOptions>? configure,
         Action<NetworkSecurityOptions>? security,
-        IHostResolver? resolver)
+        IHostResolver? resolver,
+        Action<IServiceCollection>? configureServices = null,
+        Func<DispatchHarness, BatchDriver>? driverFactory = null)
     {
         _connectionString = connectionString;
+        _configureServices = configureServices;
+        _driverFactory = driverFactory;
         Clock = clock;
         _security = security;
         _resolver = resolver;
@@ -75,13 +82,26 @@ public sealed class DispatchHarness : IAsyncDisposable
             configure?.Invoke(o);
         });
 
+        configureServices?.Invoke(services);
+
         _services = services.BuildServiceProvider();
-        Processor = new BatchDriver(
+        Processor = driverFactory?.Invoke(this) ?? new BatchDriver(
             _services.GetRequiredService<PostgresDeliverySource>(),
             _services.GetRequiredService<DeliveryProcessor>());
         Enqueue = _services.GetRequiredService<DeliveryEnqueueStore>();
+        Claims = _services.GetRequiredService<DeliveryClaimStore>();
         Configure = configure;
     }
+
+    /// <summary>Anything the harness's services provide.</summary>
+    public T Get<T>()
+        where T : notnull => _services.GetRequiredService<T>();
+
+    /// <summary>The relay of a message transport. Needs an <c>IDeliveryPublisher</c> from <c>configureServices</c>.</summary>
+    public DeliveryRelay Relay => _services.GetRequiredService<DeliveryRelay>();
+
+    /// <summary>Takes deliveries for a worker, in a batch or one by its id.</summary>
+    public DeliveryClaimStore Claims { get; }
 
     /// <summary>Finds the deliveries to announce and puts a lease on them (the database half of a message transport).</summary>
     public DeliveryEnqueueStore Enqueue { get; }
@@ -100,14 +120,16 @@ public sealed class DispatchHarness : IAsyncDisposable
         PostgresFixture postgres,
         Action<DeliveryOptions>? configure = null,
         Action<NetworkSecurityOptions>? security = null,
-        IHostResolver? resolver = null)
+        IHostResolver? resolver = null,
+        Action<IServiceCollection>? configureServices = null,
+        Func<DispatchHarness, BatchDriver>? driverFactory = null)
     {
         var connectionString = await postgres.CreateIsolatedDatabaseAsync();
-        return new DispatchHarness(connectionString, new TestClock(), configure, security, resolver);
+        return new DispatchHarness(connectionString, new TestClock(), configure, security, resolver, configureServices, driverFactory);
     }
 
     /// <summary>Another worker on the same database and the same clock, to test several workers at once.</summary>
-    public DispatchHarness CreateSecondWorker() => new(_connectionString, Clock, Configure, _security, _resolver);
+    public DispatchHarness CreateSecondWorker() => new(_connectionString, Clock, Configure, _security, _resolver, _configureServices, _driverFactory);
 
     public WebhookDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<WebhookDbContext>().UseNpgsql(_connectionString).Options);
@@ -193,7 +215,16 @@ public sealed class DispatchHarness : IAsyncDisposable
             .ToListAsync();
     }
 
-    public async ValueTask DisposeAsync() => await _services.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await _services.DisposeAsync();
+
+        // Every harness has a database of its own, and Npgsql keeps the idle connections of each database's pool
+        // for minutes. Left alone they add up over a test run until the server refuses new ones ("too many
+        // clients"), which looks like a flaky test somewhere unrelated.
+        await using var connection = new NpgsqlConnection(_connectionString);
+        NpgsqlConnection.ClearPool(connection);
+    }
 }
 
 public sealed record Seeded(Guid DeliveryId, Guid EventId, string Secret);
@@ -260,15 +291,16 @@ internal sealed class CapturingLoggerProvider : ILoggerProvider
 /// </summary>
 public sealed class BatchDriver
 {
-    private readonly PostgresDeliverySource _source;
-    private readonly DeliveryProcessor _processor;
+    private readonly Func<CancellationToken, Task<int>> _processBatch;
 
     public BatchDriver(PostgresDeliverySource source, DeliveryProcessor processor)
+        : this(ct => source.ProcessBatchAsync(processor.DeliverAsync, ct))
     {
-        _source = source;
-        _processor = processor;
     }
 
+    /// <summary>For a transport of its own: says what "one batch" means for it.</summary>
+    public BatchDriver(Func<CancellationToken, Task<int>> processBatch) => _processBatch = processBatch;
+
     /// <returns>How many deliveries were handed over. Zero means nothing was due.</returns>
-    public Task<int> ProcessBatchAsync(CancellationToken ct) => _source.ProcessBatchAsync(_processor.DeliverAsync, ct);
+    public Task<int> ProcessBatchAsync(CancellationToken ct) => _processBatch(ct);
 }

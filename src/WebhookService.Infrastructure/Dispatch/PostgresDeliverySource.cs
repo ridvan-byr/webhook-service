@@ -1,32 +1,24 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using WebhookService.Infrastructure.Persistence;
 
 namespace WebhookService.Infrastructure.Dispatch;
 
 /// <summary>
-/// The work source that needs nothing but the database: the worker polls for due deliveries and claims them.
-///
-/// Claiming is the part that makes several workers safe: rows are locked with
-/// "FOR UPDATE SKIP LOCKED", so a row that another worker is claiming is skipped instead of
-/// waited for, and no two workers ever receive the same delivery.
+/// The work source that needs nothing but the database: the worker polls for due deliveries and claims them
+/// (see <see cref="DeliveryClaimStore"/> for what makes several workers safe).
 /// </summary>
 public sealed class PostgresDeliverySource : IDeliverySource
 {
-    private readonly IDbContextFactory<WebhookDbContext> _dbFactory;
-    private readonly TimeProvider _time;
+    private readonly DeliveryClaimStore _claims;
     private readonly DeliveryOptions _options;
     private readonly ILogger<PostgresDeliverySource> _logger;
 
     public PostgresDeliverySource(
-        IDbContextFactory<WebhookDbContext> dbFactory,
-        TimeProvider time,
+        DeliveryClaimStore claims,
         IOptions<DeliveryOptions> options,
         ILogger<PostgresDeliverySource> logger)
     {
-        _dbFactory = dbFactory;
-        _time = time;
+        _claims = claims;
         _options = options.Value;
         _options.EnsureValid();
         _logger = logger;
@@ -72,7 +64,7 @@ public sealed class PostgresDeliverySource : IDeliverySource
     /// <returns>How many deliveries were claimed. Zero means there is nothing to do right now.</returns>
     public async Task<int> ProcessBatchAsync(Func<DeliveryClaim, CancellationToken, Task> handle, CancellationToken ct)
     {
-        var claimed = await ClaimAsync(ct);
+        var claimed = await _claims.ClaimDueBatchAsync(ct);
         if (claimed.Count == 0)
         {
             return 0;
@@ -84,34 +76,5 @@ public sealed class PostgresDeliverySource : IDeliverySource
             async (claim, token) => await handle(claim, token));
 
         return claimed.Count;
-    }
-
-    private async Task<List<DeliveryClaim>> ClaimAsync(CancellationToken ct)
-    {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-
-        var now = _time.GetUtcNow();
-
-        // Due: waiting for its time, or claimed by a worker whose claim has expired (it probably crashed).
-        var due = await db.Deliveries.FromSqlInterpolated($"""
-            SELECT * FROM deliveries
-            WHERE ("Status" = 'Pending' AND "NextAttemptAt" <= {now})
-               OR ("Status" = 'InProgress' AND "LockedUntil" <= {now})
-            ORDER BY "NextAttemptAt"
-            LIMIT {_options.BatchSize}
-            FOR UPDATE SKIP LOCKED
-            """).ToListAsync(ct);
-
-        // The state change itself is done by the domain model, so its rules are enforced here too.
-        foreach (var delivery in due)
-        {
-            delivery.StartAttempt(now, _options.LockDuration);
-        }
-
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-
-        return due.Select(d => new DeliveryClaim(d.Id, d.AttemptCount)).ToList();
     }
 }

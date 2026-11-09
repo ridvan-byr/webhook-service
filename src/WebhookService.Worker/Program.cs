@@ -5,6 +5,7 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddWebhookDelivery(builder.Configuration);
 builder.Services.AddHostedService<DeliveryWorker>();
+builder.Services.AddHostedService<DeliveryRelayWorker>();
 
 var host = builder.Build();
 host.Run();

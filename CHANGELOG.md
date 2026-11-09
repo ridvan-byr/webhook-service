@@ -7,6 +7,14 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 
 ### Added
 
+- Step 3a of the RabbitMQ plan: the transport itself, **off by default** (`Delivery__Transport=Postgres` is still the
+  default and behaves as before). With `Delivery__Transport=RabbitMq` a relay in the worker announces due deliveries
+  to RabbitMQ with publisher confirms and workers act on the messages. A message carries only a delivery id; the
+  database still decides what may happen, so duplicate, late or invented messages do nothing. Settings under
+  `Delivery__RabbitMq__` (host, port, user, password, TLS, names); there is no default password. Messages that cannot
+  be understood go to a poison queue. Tested against a real RabbitMQ and PostgreSQL, including a broker that is
+  stopped and restarted. Not yet in the Compose file or documented for running ([ADR 0010](docs/decisions/0010-rabbitmq-transport.md),
+  step 3b).
 - `Delivery__ErrorBackoff` (default 5 seconds, as before): how long the worker waits after a batch failed.
 - Step 2 of the RabbitMQ plan, with no change in behaviour: a nullable `EnqueuedUntil` column on `deliveries` (one
   migration, existing rows untouched), the lease rules in the delivery model, `Delivery__EnqueueLease` (default two

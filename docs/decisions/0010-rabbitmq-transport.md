@@ -28,8 +28,11 @@ exist: the queue and the data are not separate things.
 Honestly: **for this workload, PostgreSQL with `SKIP LOCKED` is enough**, and a broker adds a moving part and new
 ways to fail. The reasons to add RabbitMQ anyway are modest and worth stating without dressing them up:
 
-- Work is **pushed** to a worker as it becomes due, instead of found by polling every second. Latency stops being
-  bounded by `PollInterval`, and idle workers stop querying the database.
+- Work is **pushed** to a worker as it becomes due, instead of found by every worker polling the database every
+  second: one relay polls on behalf of all workers, and idle workers do not query the database at all. (An earlier
+  version of this text also claimed that latency stops being bounded by `PollInterval`. That is not so: the relay
+  polls the database at `PollInterval` too, so a delivery still waits for the relay's next pass. Only a wake-up
+  from the database itself, such as `LISTEN/NOTIFY`, would remove that bound.)
 - Worker hosts can be scaled and throttled (prefetch, consumers) **independently of database connections**.
 - It is a transport many teams already run and expect, and this is a portfolio project meant to show it done
   carefully, with the failure modes written down.
@@ -159,7 +162,10 @@ Consumer settings: manual acknowledgements, `prefetch = MaxParallelism`, connect
 A durable direct exchange `webhooks.deliveries` and a durable queue `webhooks.deliveries.due` (a quorum queue where
 the broker supports it; the design does not depend on replication). A message that cannot be parsed is poison: it is
 rejected without requeue into a dead-letter queue `webhooks.deliveries.poison`, and is never retried by the
-consumer. Persistent messages, publisher confirms on.
+consumer. Persistent messages, publisher confirms on. (As built, the poison queue is reached through the broker's
+default exchange, which routes by queue name, so the work queue's `x-dead-letter-routing-key` is the poison queue's
+name and no separate dead-letter exchange exists.) If a queue already exists with different settings the broker
+refuses the declaration and the process reports it; nothing is overwritten.
 
 ### Failure modes
 
@@ -223,8 +229,12 @@ Each step is its own pull request, in this order, because the first makes the ot
    **Done**, see "What step 1 found" below.
 2. **Schema and the lease.** `EnqueuedUntil`, the lease rules in the domain model, the due query as its own tested
    unit (`DeliveryEnqueueStore`). Nothing is published yet. **Done**, see "What step 2 found" below.
-3. **The RabbitMQ transport.** Relay publishing with confirms, consumer, topology, settings, the Compose service
-   (`--profile rabbitmq`), contract tests and the broker failure tests, smoke variant in CI.
+3. **The RabbitMQ transport**, in two pull requests.
+   - **3a, the code.** Relay, publisher with confirms, topology, consumer, `Delivery__Transport` and its settings,
+     the relay as a hosted service of the worker, contract tests and broker failure tests against a real RabbitMQ
+     (Testcontainers). **Done**, see "What step 3a found" below.
+   - **3b, running it.** The Compose service (`--profile rabbitmq`), `.env.example`, the smoke test with
+     `Delivery__Transport=RabbitMq` in CI, the README.
 4. **Documentation and release.** README, changelog, the failure table checked against what the tests showed,
    `0.3.0`.
 
@@ -287,16 +297,61 @@ claims, and requires the same answer.
 
 **Checking the tests by breaking the code** is recorded in the pull request for this step.
 
+## What step 3a found
+
+Written after the fact, like the sections above.
+
+**What was built.** `DeliveryRelay` (lease, commit, publish, give the lease back on failure, back off when the broker
+struggles), `IDeliveryPublisher` and `RabbitMqDeliveryPublisher` (persistent, mandatory messages, publisher confirms),
+`RabbitMqConnection` (one shared connection, opened when first needed, automatic recovery, topology declared once),
+`RabbitMqDeliverySource` (the consumer), `DeliveryClaimStore.TryClaimAsync` (claim one delivery by id through the same
+SQL conditions as the polling claim), `DeliveryMessage` (a strict reader and writer of the message), the
+`Delivery__Transport` setting and `Delivery__RabbitMq__*`, and `DeliveryRelayWorker`, which runs the relay only when
+the transport is `RabbitMq`. Without a RabbitMQ setting nothing connects to a broker and nothing changes.
+
+**Tested against a real broker.** The whole transport contract (everything the polling transport must do) passes
+against RabbitMQ 4.1 and PostgreSQL in containers, plus tests that only a broker can fail: a lost message is announced
+again once its lease runs out, a delivery a polling worker took first is not attempted again when its message arrives,
+events accepted while the broker is down are delivered after it returns, two consumers on one queue never attempt the
+same delivery twice, a consumer survives a broker restart (`rabbitmqctl stop_app` and `start_app`), and a broker that
+is not there when the consumer starts is waited for.
+
+**Checking the tests by breaking the code** (22 deliberate breakages): 17 were caught the first time. Four survived
+and three of them showed real gaps, now closed with tests: nothing checked that an idle relay rests (it would have
+polled the database in a tight loop), nothing checked the prefetch limit (a worker would have hoarded messages other
+workers could have taken), and nothing checked the publish timeout.
+
+**That last one was a real bug, not only a missing test.** The timeout was handed to the client as a cancellation
+token. A broker that has blocked its publishers (here by raising its memory alarm) does not react to it, and the
+publish waited for more than 20 seconds with a one second limit. The relay would have hung for as long as the broker
+was blocked. The limit is now enforced around the call itself, closing the channel is bounded as well, and a test
+blocks a real broker to prove it.
+
+**One breakage still survives, and it is not a gap in behaviour.** Acknowledging a message whose handling was cancelled
+by shutdown changes nothing observable, because stopping closes the channel and a closed channel cannot acknowledge:
+the broker gives the message back either way. The code leaves it unacknowledged on purpose and says why, but no test
+can tell the two apart.
+
+**Smaller findings.** A suite of this size over per-test databases exhausted PostgreSQL's connections
+("too many clients") and looked like a flaky test in code that had nothing wrong; the test harness now releases its
+connection pool when it is disposed. The poison queue is reached through the default exchange, so there is no separate
+dead-letter exchange (see Topology). If the database is unreachable while a message is claimed, the message is
+acknowledged and the delivery waits for its lease to run out (at most `EnqueueLease`), instead of coming back at once
+and spinning.
+
+**Not done yet** (step 3b): the Compose service, `.env.example`, the smoke test with this transport in CI, and the
+README. Until then the transport can be tried only through the tests or by hand.
+
 ## Limits and open questions
 
 - **Ordering is not preserved** and never was: concurrent workers and retries reorder deliveries to one endpoint.
   Receivers cannot assume order. This is not new, but a broker invites the assumption, so it is stated.
 - **No per-endpoint fairness or rate limit.** One slow receiver can occupy consumers; the existing receiver timeout
   bounds that. A per-endpoint concurrency limit is a separate decision.
-- The exact client API (RabbitMQ.Client 7's asynchronous channels and publisher confirmation tracking) is to be
-  confirmed against the version in use when step 3 starts; this document does not depend on a method name.
+- The client is RabbitMQ.Client 7.2.2 (asynchronous channels; publisher confirmation tracking turned on per channel,
+  so a publish completes when the broker has confirmed that message). The design does not depend on a method name.
 - Quorum or classic queue, and the prefetch value, are settings to measure, not to guess. No performance claim is made
-  here: the case for the broker is latency and decoupling, to be shown with a measurement or not at all.
+  here: the case for the broker is decoupling and one poller instead of many, not latency (see the first section).
 - Two sources of work for one delivery means the metrics of "due" and "in flight" must come from the database, not
   from the broker's queue length. Observability beyond log lines is not part of this plan.
 - Running a broker is an operational cost this project's README should say plainly.

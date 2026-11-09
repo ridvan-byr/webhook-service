@@ -2,6 +2,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using WebhookService.Infrastructure.Dispatch.RabbitMq;
 using WebhookService.Infrastructure.Persistence;
 using WebhookService.Infrastructure.Security;
 
@@ -54,8 +56,23 @@ public static class DeliveryServiceCollectionExtensions
         // The database half of a transport that works with messages. Nothing uses it in production yet.
         services.AddSingleton<DeliveryEnqueueStore>();
 
+        // Taking deliveries for this worker. Both ways of learning about work end here.
+        services.AddSingleton<DeliveryClaimStore>();
+
+        // Only resolved when a transport that has a publisher is chosen.
+        services.AddSingleton<DeliveryRelay>();
+
+        // The RabbitMQ transport. Nothing here connects to a broker until something is resolved that needs one.
+        services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
+        services.AddSingleton<RabbitMqConnection>();
+        services.AddSingleton<IDeliveryPublisher, RabbitMqDeliveryPublisher>();
+        services.AddSingleton<RabbitMqDeliverySource>();
+
         services.AddSingleton<PostgresDeliverySource>();
-        services.AddSingleton<IDeliverySource>(serviceProvider => serviceProvider.GetRequiredService<PostgresDeliverySource>());
+        services.AddSingleton<IDeliverySource>(serviceProvider =>
+            serviceProvider.GetRequiredService<IOptions<DeliveryOptions>>().Value.Transport == DeliveryTransport.RabbitMq
+                ? serviceProvider.GetRequiredService<RabbitMqDeliverySource>()
+                : serviceProvider.GetRequiredService<PostgresDeliverySource>());
 
         return services;
     }
