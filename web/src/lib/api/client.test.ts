@@ -31,6 +31,21 @@ describe("apiPost", () => {
     expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
   });
 
+  it("sends a body as JSON when it has one, and no content type when it has none", async () => {
+    const withBody = reply(202);
+    const without = reply(202);
+
+    await apiPost("/events", { baseUrl: BASE, apiKey: KEY, fetch: withBody as unknown as typeof fetch }, '{"a":1}');
+    await post(without as unknown as typeof fetch);
+
+    const sent = withBody.mock.calls[0] as unknown as [string, RequestInit];
+    expect(sent[1].body).toBe('{"a":1}');
+    expect((sent[1].headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    const bare = without.mock.calls[0] as unknown as [string, RequestInit];
+    expect(bare[1].body).toBeUndefined();
+    expect((bare[1].headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+  });
+
   it("tells the API's answers apart in the same way as a read does", async () => {
     expect(await post(reply(409) as unknown as typeof fetch)).toMatchObject({ ok: false, kind: "rejected", status: 409 });
     expect(await post(reply(401) as unknown as typeof fetch)).toMatchObject({ ok: false, kind: "unauthorized" });
