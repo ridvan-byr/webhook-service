@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 
 ## [Unreleased]
 
+### Fixed
+
+- Documentation: the README and ADR 0001 said the queue is behind an interface. It is not: the `deliveries` table is
+  the queue and the worker claims rows with SQL. Both are corrected, and the work needed to make the transport
+  replaceable (for RabbitMQ) is designed in [ADR 0010](docs/decisions/0010-rabbitmq-transport.md).
+
 ## [0.2.1] - 2026-11-09
 
 ### Upgrading

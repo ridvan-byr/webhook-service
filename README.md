@@ -60,8 +60,9 @@ flowchart LR
    run out the delivery is `Dead`.
 4. In the panel, the browser never sees the API key: the panel's own server calls the API for it.
 
-The PostgreSQL queue is behind an interface, so another transport (RabbitMQ is next on the roadmap) can be added
-without changing the core.
+The queue is the `deliveries` table itself: the worker claims due rows with `FOR UPDATE SKIP LOCKED`. There is no
+separate queue abstraction yet. Adding one, so that RabbitMQ can carry the work, is designed in
+[ADR 0010](docs/decisions/0010-rabbitmq-transport.md) and is next on the roadmap.
 
 ## Try it
 
@@ -118,7 +119,7 @@ machines, put it behind HTTPS. Compose needs the two secrets for every command, 
 
 ```
 src/WebhookService.Core            domain model and interfaces
-src/WebhookService.Infrastructure  persistence and transports
+src/WebhookService.Infrastructure  persistence and delivery
 src/WebhookService.Api             HTTP API
 src/WebhookService.Worker          delivery worker
 tests/WebhookService.Tests         tests
@@ -333,6 +334,6 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
 - [x] v0.2 CI, API-key auth, SSRF protection, Next.js admin panel, one-command start with Docker Compose
-- [ ] v0.3 RabbitMQ transport
+- [ ] v0.3 RabbitMQ transport ([design](docs/decisions/0010-rabbitmq-transport.md), four steps)
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide

@@ -1,0 +1,227 @@
+# 0010 - RabbitMQ as a delivery transport
+
+Status: proposed. Nothing in this document is built yet.
+
+## Context
+
+### What the code is today
+
+[ADR 0001](0001-at-least-once-delivery.md) said the queue is behind an interface. It is not, and that line has been
+corrected. What exists:
+
+- The **`deliveries` table is the queue**. A row is the unit of work and also the record of what happened to it.
+- `EventIngestionService` writes an event and one `Delivery` row per active endpoint in one transaction.
+- `DeliveryProcessor.ClaimAsync` selects due rows with raw SQL (`FOR UPDATE SKIP LOCKED`) and calls
+  `Delivery.StartAttempt`, which moves the row to `InProgress`, counts the attempt and sets `LockedUntil`.
+- `DeliveryProcessor.DeliverAsync` loads the delivery, sends it, checks that this attempt still owns the delivery
+  (the claim may have expired and another worker taken over), records the attempt and calls `MarkSucceeded` or
+  `MarkFailed`. `MarkFailed` computes the next `NextAttemptAt` with the retry policy (exponential backoff and jitter).
+- A worker that dies leaves an `InProgress` row whose `LockedUntil` passes; the next claim query takes it again.
+- `DeliveryWorker` polls: claim a batch, process it, and when there was nothing wait `PollInterval` (one second).
+
+So *scheduling*, *claiming*, *crash recovery* and *history* are all the same table and the same state machine in the
+domain model. That is a strength (one transaction, one source of truth) and it is also why a queue interface does not
+exist: the queue and the data are not separate things.
+
+### Why do this at all
+
+Honestly: **for this workload, PostgreSQL with `SKIP LOCKED` is enough**, and a broker adds a moving part and new
+ways to fail. The reasons to add RabbitMQ anyway are modest and worth stating without dressing them up:
+
+- Work is **pushed** to a worker as it becomes due, instead of found by polling every second. Latency stops being
+  bounded by `PollInterval`, and idle workers stop querying the database.
+- Worker hosts can be scaled and throttled (prefetch, consumers) **independently of database connections**.
+- It is a transport many teams already run and expect, and this is a portfolio project meant to show it done
+  carefully, with the failure modes written down.
+
+If the broker's value were only speed, the cheaper answer would be PostgreSQL `LISTEN/NOTIFY` to wake workers. That is
+listed below as an alternative, not rejected as unreasonable.
+
+## Options considered
+
+1. **Hybrid: the message is a wake-up call; PostgreSQL stays the source of truth** (chosen, below).
+2. **RabbitMQ as the queue and the only source of truth for state**, with the database as history. Rejected: state
+   would live in two places that can disagree (a message published but the row never committed, or the reverse),
+   which forces an outbox anyway; and manual re-send, the delivery states shown in the panel and the retry policy all
+   read the database.
+3. **RabbitMQ for retry timing** (delayed messages or TTL queues). Rejected: per-message TTL in a classic queue only
+   expires at the head of the queue, so a short delay can wait behind a long one; fixed delay tiers (one queue per
+   delay) cannot express the jittered, exponential delays the domain already computes; the delayed-message exchange
+   is a plugin to install and operate. The database already holds `NextAttemptAt`.
+4. **A messaging library** (MassTransit, Wolverine, NServiceBus). Rejected for now: it would own the retry,
+   outbox and consumer semantics this project wants to show and test itself, and it adds a large dependency. Not a
+   judgement on the libraries.
+5. **PostgreSQL `LISTEN/NOTIFY` to wake workers.** Valid and much cheaper; does not give a broker. Kept as the
+   fallback if the broker turns out not to be worth its cost.
+6. **Kafka.** Rejected: a log is a poor fit for per-item acknowledgement, retry and re-send, and ordering is not needed.
+
+## Decision
+
+### The message is a wake-up call, not the work
+
+The row in `deliveries` remains the work and the record. A message says only "delivery X is due, try it". It carries
+the **delivery id and nothing else**: no payload, no endpoint address, no signing secret. The consumer reads
+everything from the database. This has three consequences that make the design simple:
+
+- A **lost** message is harmless: the row is still due, and it is published again when its lease expires (below).
+- A **duplicated** message is harmless: the consumer claims the row with the existing state machine; a row that is
+  already `InProgress`, `Succeeded` or `Dead` cannot be claimed, and the duplicate is acknowledged and dropped.
+- The broker never holds what must stay secret, so its disk, its management UI and its logs do not need to be
+  treated as holding payloads or secrets.
+
+The guarantee stays what ADR 0001 says: **at-least-once, with the database deciding**.
+
+### Two parts, one seam
+
+The seam is *how a worker learns which delivery to try*. Everything after that, claiming one delivery, sending,
+the ownership check, recording the attempt and the state transitions, is the code that exists today and does not
+change.
+
+```csharp
+// Proposed shape; the exact names are for the implementation to settle.
+public interface IDeliverySource
+{
+    // Calls `handle` for every delivery that should be attempted now, after the database claim
+    // (Delivery.StartAttempt) was made, and does whatever acknowledgement the transport needs once
+    // `handle` returns. Runs until `ct` is cancelled.
+    Task RunAsync(Func<DeliveryClaim, CancellationToken, Task> handle, CancellationToken ct);
+}
+
+public sealed record DeliveryClaim(Guid DeliveryId, int AttemptNumber);   // exists today as a private Claim
+```
+
+- **`PostgresDeliverySource`**: today's polling loop, unchanged in behaviour (claim a batch, run `handle` in
+  parallel). It stays the default.
+- **`RabbitMqDeliverySource`**: a consumer that, for each message, makes the same database claim for that one
+  delivery, calls `handle`, then acknowledges.
+- **`DeliveryRelay`** (a hosted service that exists only with the RabbitMQ transport): finds due deliveries and
+  publishes a message for each.
+
+`Delivery:Transport` (`Postgres` or `RabbitMq`) chooses the source. Workers of both kinds can even run at the same
+time against one database, because both go through the same claim; that is a deliberate property, tested.
+
+### The relay
+
+The relay uses today's due query, plus a lease so a due row is not published on every pass:
+
+```sql
+SELECT * FROM deliveries
+WHERE (("Status" = 'Pending'    AND "NextAttemptAt" <= now)
+    OR ("Status" = 'InProgress' AND "LockedUntil"   <= now))
+  AND ("EnqueuedUntil" IS NULL OR "EnqueuedUntil" <= now)
+ORDER BY "NextAttemptAt" LIMIT n
+FOR UPDATE SKIP LOCKED
+```
+
+Inside one transaction it publishes a message per row **with publisher confirms**, then sets
+`EnqueuedUntil = now + EnqueueLease` and commits. The order matters:
+
+- publish fails or is not confirmed: the transaction rolls back, nothing is marked, the rows are found again;
+- publish confirmed but the commit fails: the row is published again later, a duplicate, which is harmless;
+- publish and commit both succeed: the row stays quiet until `EnqueueLease` passes. If the message was lost anyway,
+  or the consumer died, the lease expires and the relay publishes again.
+
+`EnqueuedUntil` is a new nullable column (one migration). `Delivery.MarkFailed` and `Requeue` clear it, so a retry
+is published when it becomes due. `EnqueueLease` must be longer than `LockDuration + RequestTimeout`, checked at
+start like the existing `LockDuration` rule, so a slow but healthy attempt is not published a second time.
+
+### The consumer
+
+For each message: parse the delivery id, then in one transaction `SELECT ... WHERE "Id" = @id AND <due condition>
+FOR UPDATE SKIP LOCKED` and `StartAttempt`. If a row came back, call `handle`; if not (already done, locked by
+someone else, not due), there is nothing to do. **Acknowledge in every case, after the result is in the database or
+the claim was refused, and never requeue.** Retry timing belongs to the database alone:
+
+- a failure inside `handle` that cannot be recorded (the database is down) leaves the row `InProgress`; its lock
+  expires, the relay publishes it again;
+- a worker that dies mid-send never acknowledges; the broker redelivers; the consumer's claim fails (the row is
+  `InProgress` and its lock has not expired) and acknowledges; the lock expires and the relay publishes again.
+
+Not requeueing is what prevents a hot loop between a failing consumer and the broker.
+
+Consumer settings: manual acknowledgements, `prefetch = MaxParallelism`, connection recovery on.
+
+### Topology
+
+A durable direct exchange `webhooks.deliveries` and a durable queue `webhooks.deliveries.due` (a quorum queue where
+the broker supports it; the design does not depend on replication). A message that cannot be parsed is poison: it is
+rejected without requeue into a dead-letter queue `webhooks.deliveries.poison`, and is never retried by the
+consumer. Persistent messages, publisher confirms on.
+
+### Failure modes
+
+| What happens | What the system does |
+|---|---|
+| Broker unreachable | The relay cannot publish and backs off; rows stay due in the database; nothing is lost; deliveries resume when it returns. With the Postgres transport selected nothing changes. |
+| Broker restarts, queue contents lost | The leases expire and the relay publishes again. |
+| Message duplicated or redelivered | The second claim fails on the state machine; acknowledged and dropped. |
+| Consumer crashes mid-send | See the consumer section; the delivery is attempted again after its lock expires, as today. |
+| Relay crashes between publish and commit | The rows were not marked; they are published again (a duplicate). |
+| Receiver is slow or failing | Unchanged: the attempt is recorded and `MarkFailed` schedules the retry in the database. |
+| Malformed message | Dead-lettered, logged once, ignored. |
+| Database unreachable | The relay and consumers fail and retry with a backoff, as the worker does today. |
+| All workers stopped | Nothing is consumed; the rows stay due. |
+
+A transport that is down for good stops deliveries when `RabbitMq` is selected; the answer is to switch the setting
+back to `Postgres`, which needs no data migration. That reversibility is part of the design.
+
+### Security
+
+- Credentials come from the environment, never from the image or the repository. RabbitMQ's default `guest` user is
+  only allowed from the same machine, so the Compose file creates a user from `.env`.
+- The broker is not published to the host except, optionally, the management interface on `127.0.0.1`.
+- No payload or secret in a message (above). TLS to the broker is a setting (`Delivery:RabbitMq:UseTls`), off by
+  default for the local Compose setup and documented as required anywhere else.
+- Dependabot watches the RabbitMQ image; major versions are excluded.
+
+### Configuration
+
+| Setting | Meaning |
+|---|---|
+| `Delivery__Transport` | `Postgres` (default) or `RabbitMq` |
+| `Delivery__RabbitMq__Host`, `__Port`, `__Username`, `__Password`, `__UseTls` | The broker |
+| `Delivery__EnqueueLease` | How long a published delivery is left alone before it is published again |
+
+## How it will be tested
+
+The point of a seam is that both sides keep the same promises, so the tests that define the promises run against
+both:
+
+- The tests in `DeliveryProcessorTests` (exact payload and signature, a retry that is not sent before its time, dead
+  after the last attempt, slow and unreachable receivers, inactive endpoints, a crashed worker picked up after its
+  lock, two workers never sending the same delivery) become **contract tests** run once per transport, the
+  RabbitMQ run against a real broker in a container (Testcontainers).
+- Tests only the RabbitMQ side needs: a duplicate message; a message for a finished delivery; a message for a
+  delivery that does not exist; a poison message; the broker stopped and started again mid-run; the broker down while
+  events are accepted; publish not confirmed; a consumer killed before it acknowledges; the relay killed between
+  publish and commit; a Postgres worker and a RabbitMQ worker running together over the same deliveries.
+- A variant of `scripts/smoke.sh` with `Delivery__Transport=RabbitMq` and the broker in Compose, run in CI.
+- As in the earlier slices, deliberate breakages (an acknowledgement before the commit, a requeue, a removed lease
+  check) must make tests fail, and what was run is written down.
+
+## Plan
+
+Each step is its own pull request, in this order, because the first makes the others small:
+
+1. **Extract the seam, no new behaviour.** `IDeliverySource` and `PostgresDeliverySource`; `DeliveryProcessor`
+   keeps the delivery logic. The existing tests pass unchanged; the contract tests are parameterised with one
+   transport. *Done when:* every existing test passes, and the two-workers test passes through the seam.
+2. **Schema and relay.** `EnqueuedUntil`, the lease rule, the due query as its own tested unit. Nothing published yet.
+3. **The RabbitMQ transport.** Relay publishing with confirms, consumer, topology, settings, the Compose service
+   (`--profile rabbitmq`), contract tests and the broker failure tests, smoke variant in CI.
+4. **Documentation and release.** README, changelog, the failure table checked against what the tests showed,
+   `0.3.0`.
+
+## Limits and open questions
+
+- **Ordering is not preserved** and never was: concurrent workers and retries reorder deliveries to one endpoint.
+  Receivers cannot assume order. This is not new, but a broker invites the assumption, so it is stated.
+- **No per-endpoint fairness or rate limit.** One slow receiver can occupy consumers; the existing receiver timeout
+  bounds that. A per-endpoint concurrency limit is a separate decision.
+- The exact client API (RabbitMQ.Client 7's asynchronous channels and publisher confirmation tracking) is to be
+  confirmed against the version in use when step 3 starts; this document does not depend on a method name.
+- Quorum or classic queue, and the prefetch value, are settings to measure, not to guess. No performance claim is made
+  here: the case for the broker is latency and decoupling, to be shown with a measurement or not at all.
+- Two sources of work for one delivery means the metrics of "due" and "in flight" must come from the database, not
+  from the broker's queue length. Observability beyond log lines is not part of this plan.
+- Running a broker is an operational cost this project's README should say plainly.
