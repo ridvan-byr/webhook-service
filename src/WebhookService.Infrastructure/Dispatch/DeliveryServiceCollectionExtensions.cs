@@ -51,6 +51,9 @@ public static class DeliveryServiceCollectionExtensions
 
         // Where the work comes from. The polling source needs nothing but the database. It is registered as
         // itself as well, because tests drive it one batch at a time.
+        // The database half of a transport that works with messages. Nothing uses it in production yet.
+        services.AddSingleton<DeliveryEnqueueStore>();
+
         services.AddSingleton<PostgresDeliverySource>();
         services.AddSingleton<IDeliverySource>(serviceProvider => serviceProvider.GetRequiredService<PostgresDeliverySource>());
 

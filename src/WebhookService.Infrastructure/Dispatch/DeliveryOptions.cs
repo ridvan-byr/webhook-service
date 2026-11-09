@@ -24,6 +24,14 @@ public sealed class DeliveryOptions
     /// <summary>How long the worker sleeps when there is nothing to do.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>
+    /// For a transport that announces deliveries with messages: how long a delivery is left alone after it was
+    /// announced. If the message is lost, or nobody acts on it, the delivery is announced again once this has passed.
+    /// Longer than the time a message normally waits before a worker takes it, or deliveries are announced twice
+    /// (harmless, but wasteful); not so long that a lost message takes long to be noticed.
+    /// </summary>
+    public TimeSpan EnqueueLease { get; set; } = TimeSpan.FromMinutes(2);
+
     /// <summary>How long the worker waits after a batch failed (for example the database was unreachable).</summary>
     public TimeSpan ErrorBackoff { get; set; } = TimeSpan.FromSeconds(5);
 
@@ -50,6 +58,11 @@ public sealed class DeliveryOptions
         if (MaxAttempts < 1)
         {
             throw new InvalidOperationException("Delivery:MaxAttempts must be at least 1.");
+        }
+
+        if (EnqueueLease <= TimeSpan.Zero)
+        {
+            throw new InvalidOperationException("Delivery:EnqueueLease must be positive.");
         }
 
         if (ErrorBackoff <= TimeSpan.Zero)

@@ -47,6 +47,15 @@ public class DeliveryRegistrationTests
     }
 
     [Fact]
+    public void The_database_half_of_a_message_transport_is_registered_but_does_not_change_the_default_source()
+    {
+        using var services = Build();
+
+        Assert.NotNull(services.GetRequiredService<DeliveryEnqueueStore>());
+        Assert.IsType<PostgresDeliverySource>(services.GetRequiredService<IDeliverySource>());
+    }
+
+    [Fact]
     public void The_worker_gets_the_database_polling_source_by_default()
     {
         using var services = Build();

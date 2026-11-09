@@ -79,8 +79,12 @@ public sealed class DispatchHarness : IAsyncDisposable
         Processor = new BatchDriver(
             _services.GetRequiredService<PostgresDeliverySource>(),
             _services.GetRequiredService<DeliveryProcessor>());
+        Enqueue = _services.GetRequiredService<DeliveryEnqueueStore>();
         Configure = configure;
     }
+
+    /// <summary>Finds the deliveries to announce and puts a lease on them (the database half of a message transport).</summary>
+    public DeliveryEnqueueStore Enqueue { get; }
 
     public TestClock Clock { get; }
 
@@ -163,6 +167,21 @@ public sealed class DispatchHarness : IAsyncDisposable
     {
         await using var db = CreateContext();
         return await db.Deliveries.AsNoTracking().SingleAsync(d => d.Id == id);
+    }
+
+    public async Task<List<Delivery>> GetAllDeliveriesAsync()
+    {
+        await using var db = CreateContext();
+        return await db.Deliveries.AsNoTracking().ToListAsync();
+    }
+
+    /// <summary>Changes a delivery through its own methods, to put it in a state a test needs.</summary>
+    public async Task ModifyDeliveryAsync(Guid id, Action<Delivery> change)
+    {
+        await using var db = CreateContext();
+        var delivery = await db.Deliveries.SingleAsync(d => d.Id == id);
+        change(delivery);
+        await db.SaveChangesAsync();
     }
 
     public async Task<List<DeliveryAttempt>> GetAttemptsAsync(Guid deliveryId)
