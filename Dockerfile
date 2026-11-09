@@ -5,7 +5,7 @@
 #
 # docker-compose.yml does this for you.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Project files first, so the package restore is cached until a dependency changes.
