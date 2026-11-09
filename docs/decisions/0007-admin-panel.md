@@ -93,7 +93,7 @@ purpose and confirming that a test fails.
 
 The author's machine runs Node 20.18.0, which reached end of life in April 2026. Several current tools assume
 that a CommonJS module can `require()` an ES module (Node 20.19, 22.12 and later), which Node 20.18 cannot do.
-To keep everything working there, these are pinned (the ESLint row is a compatibility hold, not a Node one).
+To keep everything working there, these are pinned (the ESLint, TypeScript and `@types/node` rows are compatibility holds, not Node 20.18 ones).
 `.github/dependabot.yml` tells Dependabot to leave them alone; remove an entry there together with its pin:
 
 | Pin | Why | Remove when |
@@ -101,6 +101,9 @@ To keep everything working there, these are pinned (the ESLint row is a compatib
 | `tailwindcss` and `@tailwindcss/turbopack` 4.3.3 (exact) | 4.3.4 and later need `magic-string` 1.x, which is ESM only | Node is 22.12 or later |
 | `jsdom` 25.0.1 and an override of `cssstyle` to 4.1.0 | newer `cssstyle` versions pull an ESM-only chain | Node is 22.12 or later |
 | `eslint` stays on 9 | `eslint-plugin-jsx-a11y` and the React and Next.js plugins do not list ESLint 10 in their peer ranges, so `npm ci` stops with `ERESOLVE` | Those plugins support ESLint 10 |
+| `vitest` stays on 4 and `@vitejs/plugin-react` on 4 | Vitest 5 needs Node 22.12 or later; plugin-react 6 needs Vite 8, whose Rolldown binary does not load on Node 20.18 | Node is 22.12 or later |
+| `typescript` stays below 6.1 | `typescript-eslint` supports TypeScript up to 6.0, so TypeScript 7 fails the lint step | `typescript-eslint` supports the newer version |
+| `@types/node` stays on 20 | The types should describe the lowest Node the panel supports; newer ones would allow APIs Node 20 does not have | Node 20 is no longer supported |
 | `minimatch` 11.0.5, only for `@typescript-eslint/typescript-estree` | fixes a denial-of-service advisory in the version that tool asks for | `typescript-eslint` asks for a fixed version itself |
 
 The CI job runs on Node 24 and on Node 20.18.0. The second one exists so that a dependency update which would
