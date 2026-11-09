@@ -24,7 +24,16 @@ const SAFE_PATH = /^\/(?![/\\])[^\s\\@]*$/;
  * The result never carries the key or anything the API wrote: the caller learns only what kind of problem
  * it was, so nothing sensitive can reach a page or a log by accident.
  */
-export async function apiGet<T>(path: string, options: ApiCallOptions): Promise<ApiResult<T>> {
+export function apiGet<T>(path: string, options: ApiCallOptions): Promise<ApiResult<T>> {
+  return request<T>("GET", path, options);
+}
+
+/** Asks the API to do something (nothing the panel does needs a body). Same guarantees as apiGet. */
+export function apiPost<T>(path: string, options: ApiCallOptions): Promise<ApiResult<T>> {
+  return request<T>("POST", path, options);
+}
+
+async function request<T>(method: "GET" | "POST", path: string, options: ApiCallOptions): Promise<ApiResult<T>> {
   if (!SAFE_PATH.test(path)) throw new Error("Invalid API path.");
 
   const fetchImpl = options.fetch ?? fetch;
@@ -32,7 +41,7 @@ export async function apiGet<T>(path: string, options: ApiCallOptions): Promise<
   let response: Response;
   try {
     response = await fetchImpl(`${options.baseUrl}${path}`, {
-      method: "GET",
+      method,
       headers: { Authorization: `Bearer ${options.apiKey}`, Accept: "application/json" },
       cache: "no-store",
       redirect: "manual",

@@ -37,6 +37,12 @@ How it works:
 - Signing out overwrites the cookie with the same attributes. `cookies().delete` is not enough: a browser
   ignores a change to a `__Host-` cookie that is not `Secure`, which a real-browser test showed (the session
   survived a sign-out) and a unit test now covers.
+- Every page and every Server Action authenticates itself through `requireApi()`. A layout does not run again
+  on each navigation, and a Server Action can be called without its page, so neither can rely on a check made
+  elsewhere. An id from the address bar only becomes part of a path to the API after it is checked to be a
+  real id, and a status filter is looked up in a fixed list instead of being passed on.
+- Everything shown on the deliveries screens (event types, endpoint addresses, errors, what a receiver
+  answered) was written by other systems, so it is only ever rendered as text.
 
 ### Content-Security-Policy with a nonce, no inline scripts or styles
 

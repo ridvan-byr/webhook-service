@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
-import { apiGet } from "@/lib/api/client";
+import { apiGet, apiPost } from "@/lib/api/client";
 
 const BASE = "http://api.test:5005";
 const KEY = "whk_0123456789ab_SECRETSECRETSECRETSECRETSECRETSECRETSECRET";
@@ -12,6 +12,38 @@ function reply(status: number, body: unknown = {}, raw = false) {
 function call<T = unknown>(fetchImpl: typeof fetch, path = "/me", timeoutMs = 1000) {
   return apiGet<T>(path, { baseUrl: BASE, apiKey: KEY, fetch: fetchImpl, timeoutMs });
 }
+
+describe("apiPost", () => {
+  const post = (fetchImpl: typeof fetch, path = "/deliveries/1/resend") =>
+    apiPost(path, { baseUrl: BASE, apiKey: KEY, fetch: fetchImpl });
+
+  it("sends a POST for the signed-in user, never cached and never following a redirect", async () => {
+    const fetchImpl = reply(202, { status: "Pending" });
+
+    const result = await post(fetchImpl as unknown as typeof fetch);
+
+    expect(result).toEqual({ ok: true, data: { status: "Pending" } });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("http://api.test:5005/deliveries/1/resend");
+    expect(init.method).toBe("POST");
+    expect(init.cache).toBe("no-store");
+    expect(init.redirect).toBe("manual");
+    expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
+  });
+
+  it("tells the API's answers apart in the same way as a read does", async () => {
+    expect(await post(reply(409) as unknown as typeof fetch)).toMatchObject({ ok: false, kind: "rejected", status: 409 });
+    expect(await post(reply(401) as unknown as typeof fetch)).toMatchObject({ ok: false, kind: "unauthorized" });
+    expect(await post(reply(500) as unknown as typeof fetch)).toMatchObject({ ok: false, kind: "server" });
+  });
+
+  it("refuses a path that could lead somewhere else", async () => {
+    const fetchImpl = reply(200);
+
+    await expect(post(fetchImpl as unknown as typeof fetch, "//evil.example")).rejects.toThrow(/path/i);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
 
 describe("apiGet", () => {
   it("asks the API on behalf of the signed-in user and returns what it answers", async () => {

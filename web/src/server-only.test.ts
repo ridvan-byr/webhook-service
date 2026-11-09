@@ -9,6 +9,10 @@ import { describe, expect, it } from "vitest";
 const MODULES_THAT_HANDLE_SECRETS = [
   "lib/config.ts",
   "lib/api/client.ts",
+  "lib/api/deliveries.ts",
+  "lib/session/account.ts",
+  "lib/session/api-access.ts",
+  "lib/session/current.ts",
   "lib/session/crypto.ts",
   "lib/session/sign-in.ts",
 ];

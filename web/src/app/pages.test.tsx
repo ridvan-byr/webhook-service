@@ -1,12 +1,11 @@
-﻿import { render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import DeliveriesPage from "@/app/(app)/deliveries/page";
 import EndpointsPage from "@/app/(app)/endpoints/page";
 import NewEventPage from "@/app/(app)/events/new/page";
 
-describe("the screens of the menu", () => {
+// The deliveries pages fetch data and have their own tests next to them.
+describe("the screens that are not built yet", () => {
   it.each([
-    ["Deliveries", DeliveriesPage],
     ["Endpoints", EndpointsPage],
     ["Send test event", NewEventPage],
   ])("%s has one level 1 heading with its name", (name, Page) => {

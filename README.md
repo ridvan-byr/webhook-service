@@ -172,7 +172,9 @@ the second line of defence, not the first.
 ## Admin panel
 
 A Next.js application in [`web/`](web). Work in progress: so far it is the frame (menu, light and dark theme,
-security headers) and signing in with a tenant's API key. The screens that show your deliveries come in the next steps.
+security headers), signing in with a tenant's API key, and the deliveries screens: a list you can filter by status
+that refreshes every five seconds, and a page per delivery with every attempt and a button to send a dead
+delivery again. Endpoints and sending a test event come in the next steps.
 The design decisions, and why a few packages are pinned, are in
 [ADR 0007](docs/decisions/0007-admin-panel.md).
 
