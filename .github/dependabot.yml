@@ -55,6 +55,19 @@ updates:
       # (npm stops with ERESOLVE). Revisit when their peer ranges include 10.
       - dependency-name: "eslint"
         update-types: ["version-update:semver-major"]
+      # Vitest 5 needs Node 22.12 or later, and @vitejs/plugin-react 6 needs Vite 8 (its Rolldown binary does
+      # not load on Node 20.18). They move together with Vite, so they are held back together.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      # typescript-eslint supports TypeScript up to 6.0, so 6.1 and later (including 7) fail the lint step.
+      - dependency-name: "typescript"
+        versions: [">= 6.1.0"]
+      # The types describe the Node the panel runs on. The lowest supported Node is 20, so newer type
+      # definitions would let code use APIs that do not exist there without any error.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       # Next.js and React are released together and their versions have to match.
       next-and-react:
