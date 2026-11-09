@@ -39,6 +39,22 @@ updates:
     directory: /web
     schedule:
       interval: weekly
+    # Packages that are held back on purpose, because the panel must still build and test on Node 20.18
+    # (see "Node version and pinned packages" in docs/decisions/0007-admin-panel.md). Remove an entry
+    # when the Node requirement moves up, otherwise its pull request fails in CI.
+    ignore:
+      # 4.3.4 and later load magic-string through require(), which is ESM-only and fails on Node 20.18.
+      - dependency-name: "tailwindcss"
+        versions: [">= 4.3.4"]
+      - dependency-name: "@tailwindcss/*"
+        versions: [">= 4.3.4"]
+      # jsdom 26 and later need a newer Node than 20.18.
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
+      # ESLint 10 is not supported yet by eslint-plugin-jsx-a11y and the React and Next.js plugins
+      # (npm stops with ERESOLVE). Revisit when their peer ranges include 10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
     groups:
       # Next.js and React are released together and their versions have to match.
       next-and-react:
