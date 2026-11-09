@@ -5,6 +5,16 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-09
+
+### Upgrading
+
+- **Behind a reverse proxy, set `Security__TrustedProxyNetworks__0`** (for example `10.0.0.0/8`) to the network of
+  the proxy. Without it every request comes from the proxy's address, so all your clients share one limit and a
+  few wrong keys from one of them can make the API refuse all of them for a minute. Docker Compose users who reach
+  the API directly on `localhost` need to change nothing.
+- Clients that retry a request with a wrong key in a tight loop will now meet `429`. Honour `Retry-After`.
+
 ### Added
 
 - **A limit on failed attempts to authenticate.** A client that presents wrong API keys (or a wrong admin key) more
@@ -20,6 +30,15 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 ### Changed
 
 - The smoke test also checks that the 21st wrong key in a row is the first one refused.
+
+### Known limitations
+
+The ones of 0.2.0 still apply, except that failed attempts are now limited. In addition:
+
+- Only failed attempts are limited. A valid tenant can send as many requests and events as it likes.
+- The count is kept in memory: each running copy of the API counts for itself, and it starts again with the process.
+- The panel's sign-in form has one count for everybody, so someone can make it wait for up to a minute. Sessions
+  that are already signed in are not affected. ([ADR 0009](docs/decisions/0009-failed-authentication-limit.md))
 
 ## [0.2.0] - 2026-11-09
 
@@ -71,4 +90,6 @@ The first release. Everything below is new.
   (see [ADR 0007](docs/decisions/0007-admin-panel.md)).
 - Nothing has been run in production.
 
+[Unreleased]: https://github.com/ridvan-byr/webhook-service/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ridvan-byr/webhook-service/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ridvan-byr/webhook-service/releases/tag/v0.2.0
