@@ -107,7 +107,7 @@ services:
     # Like postgres, the image starts as root and drops to its own user, so no "cap_drop: ALL" here.
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
-    image: rabbitmq:4.1-management-alpine
+    image: rabbitmq:4.4-management-alpine
     hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: webhooks
