@@ -137,5 +137,9 @@ updates:
     ignore:
       - dependency-name: "postgres"
         update-types: ["version-update:semver-major"]
+      # A new RabbitMQ major version can change defaults (queue types, feature flags). Moving to one is a decision,
+      # tested against the broker tests first, not an update.
+      - dependency-name: "rabbitmq"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "node"
         update-types: ["version-update:semver-major"]

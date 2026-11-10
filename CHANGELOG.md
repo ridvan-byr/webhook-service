@@ -7,6 +7,11 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 
 ### Added
 
+- Step 3b: running the RabbitMQ transport. `docker compose --profile rabbitmq` starts a broker (not published to the
+  host; its management page only on 127.0.0.1; no default password, and it refuses to start without one), and
+  `DELIVERY_TRANSPORT=RabbitMq` in `.env` makes the worker use it. `scripts/smoke.sh rabbitmq` and a second CI job
+  check end to end that a delivery goes through the broker and the queues end up empty. README section "Using
+  RabbitMQ". Dependabot does not move RabbitMQ to a new major version on its own.
 - Step 3a of the RabbitMQ plan: the transport itself, **off by default** (`Delivery__Transport=Postgres` is still the
   default and behaves as before). With `Delivery__Transport=RabbitMq` a relay in the worker announces due deliveries
   to RabbitMQ with publisher confirms and workers act on the messages. A message carries only a delivery id; the

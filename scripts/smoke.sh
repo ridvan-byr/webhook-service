@@ -2,13 +2,20 @@
 # Builds and starts the whole service with Docker Compose and checks that it works end to end:
 # the API answers, a tenant can be created, an event reaches a receiver, and the panel is up and protected.
 #
-#   scripts/smoke.sh
+#   scripts/smoke.sh              the worker polls the database (the default)
+#   scripts/smoke.sh rabbitmq     deliveries go through RabbitMQ, which is started too
 #
 # It uses made-up secrets, its own project name and its own volume, and removes everything when it is done.
 # Ports 3000 and 5005 must be free. Needs Docker, curl and Node.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+TRANSPORT="${1:-postgres}"
+case "$TRANSPORT" in
+  postgres|rabbitmq) ;;
+  *) echo "usage: $0 [postgres|rabbitmq]" >&2; exit 2 ;;
+esac
 
 export COMPOSE_PROJECT_NAME=webhook-smoke
 export ADMIN_API_KEY="$(node -e "console.log(require('crypto').randomBytes(24).toString('hex'))")"
@@ -17,9 +24,15 @@ export SESSION_SECRET="$(node -e "console.log(require('crypto').randomBytes(32).
 export ALLOW_PRIVATE_NETWORKS=true
 export REQUIRE_HTTPS=false
 
+if [ "$TRANSPORT" = rabbitmq ]; then
+  export DELIVERY_TRANSPORT=RabbitMq
+  export RABBITMQ_PASSWORD="$(node -e "console.log(require('crypto').randomBytes(24).toString('hex'))")"
+fi
+
 API=http://127.0.0.1:5005
 WEB=http://127.0.0.1:3000
 COMPOSE=(docker compose --profile demo)
+[ "$TRANSPORT" = rabbitmq ] && COMPOSE+=(--profile rabbitmq)
 
 step() { printf '\n== %s\n' "$*"; }
 fail() { printf 'FAILED: %s\n' "$*" >&2; "${COMPOSE[@]}" logs --tail=40 >&2 || true; exit 1; }
@@ -64,6 +77,23 @@ done
 step "The receiver got a signed request"
 "${COMPOSE[@]}" logs receiver | grep -q 'webhookSignature":"v1,' || fail "the receiver did not log a v1 signature"
 
+if [ "$TRANSPORT" = rabbitmq ]; then
+  step "The delivery really went through RabbitMQ"
+  "${COMPOSE[@]}" logs worker | grep -q 'Delivery relay started' || fail "the worker did not start the relay"
+  # The broker counts what was published to the exchange. It updates its statistics every few seconds.
+  published=0
+  for _ in $(seq 1 15); do
+    published=$(curl -fsS -u "webhooks:$RABBITMQ_PASSWORD" 'http://127.0.0.1:15672/api/exchanges/%2F/webhooks.deliveries'       | json 'v.message_stats?.publish_in ?? 0' || echo 0)
+    [ "$published" -ge 1 ] && break
+    sleep 2
+  done
+  [ "$published" -ge 1 ] || fail "the broker saw no message published to the exchange"
+  queue=$(curl -fsS -u "webhooks:$RABBITMQ_PASSWORD" 'http://127.0.0.1:15672/api/queues/%2F/webhooks.deliveries.due'     | json 'v.messages')
+  [ "$queue" = 0 ] || fail "the queue still holds $queue message(s) after the delivery succeeded"
+  poison=$(curl -fsS -u "webhooks:$RABBITMQ_PASSWORD" 'http://127.0.0.1:15672/api/queues/%2F/webhooks.deliveries.poison'     | json 'v.messages')
+  [ "$poison" = 0 ] || fail "the poison queue holds $poison message(s)"
+fi
+
 step "The panel is up and protected"
 code=$(curl -s -o /dev/null -w '%{http_code}' "$WEB/login")
 [ "$code" = 200 ] || fail "GET /login gave $code, expected 200"
@@ -76,6 +106,11 @@ echo "$headers" | grep -qi '^x-frame-options: DENY' || fail "the panel sent no X
 step "The database is not published to the host"
 published=$(docker port "$("${COMPOSE[@]}" ps -q postgres)" 2>/dev/null || true)
 [ -z "$published" ] || fail "PostgreSQL is published to the host: $published"
+if [ "$TRANSPORT" = rabbitmq ]; then
+  # Only the management page, and only on this computer. The broker's own port must not be reachable.
+  broker=$(docker port "$("${COMPOSE[@]}" ps -q rabbitmq)" 2>/dev/null | grep -v '^15672/tcp -> 127.0.0.1:15672$' || true)
+  [ -z "$broker" ] || fail "RabbitMQ publishes more than its management page on 127.0.0.1: $broker"
+fi
 
 step "The containers do not run as root"
 for service in api worker web; do
