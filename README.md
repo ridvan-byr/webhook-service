@@ -60,9 +60,9 @@ flowchart LR
    run out the delivery is `Dead`.
 4. In the panel, the browser never sees the API key: the panel's own server calls the API for it.
 
-The queue is the `deliveries` table itself: the worker claims due rows with `FOR UPDATE SKIP LOCKED`. There is no
-separate queue abstraction yet. Adding one, so that RabbitMQ can carry the work, is designed in
-[ADR 0010](docs/decisions/0010-rabbitmq-transport.md) and is next on the roadmap.
+The queue is the `deliveries` table itself: the worker claims due rows with `FOR UPDATE SKIP LOCKED`. By default
+that is all there is. Optionally RabbitMQ can announce due deliveries to the workers instead of every worker polling
+the database; the database stays the source of truth either way (see [Using RabbitMQ](#using-rabbitmq-optional)).
 
 ## Try it
 
@@ -107,13 +107,39 @@ machines, put it behind HTTPS. Compose needs the two secrets for every command, 
 `.env`. How the containers are built and what is checked is in
 [ADR 0008](docs/decisions/0008-containers.md); `scripts/smoke.sh` runs those checks.
 
+## Using RabbitMQ (optional)
+
+Honestly: for this workload PostgreSQL alone is enough, and it is the default. A broker is one more thing to run and
+to fail. It is here because it is a transport many teams already operate, and to show it done carefully: what it
+changes is that one relay looks for due deliveries and announces them, so idle workers do not query the database at
+all, and workers can be scaled without more database connections. It does **not** make deliveries faster; the relay
+polls the database too.
+
+```bash
+# in .env: DELIVERY_TRANSPORT=RabbitMq and RABBITMQ_PASSWORD=<something long and random> (see .env.example)
+docker compose --profile rabbitmq up -d --build
+```
+
+- A message carries only a delivery id, never a payload, address or secret. The worker still claims the delivery in
+  the database, so a duplicate, late or invented message cannot make anything happen twice.
+- If the broker is down, nothing is lost: events are still accepted, the deliveries stay due in the database and are
+  announced when the broker returns. If it is down for good, set `DELIVERY_TRANSPORT=Postgres` and restart the worker;
+  nothing needs migrating, and a worker of either kind can run next to the other.
+- Messages that cannot be understood go to the queue `webhooks.deliveries.poison` instead of being retried.
+- The broker is not published to the host. Its management page is on `http://127.0.0.1:15672` (user `webhooks`, your
+  password) and only on this computer. There is no default password; the broker refuses to start without one. Outside
+  a single machine, turn on TLS (`Delivery__RabbitMq__UseTls=true`).
+- The design, the failure cases and what building it found are in
+  [ADR 0010](docs/decisions/0010-rabbitmq-transport.md). `scripts/smoke.sh rabbitmq` runs the end-to-end check, and
+  the unit and integration tests run against a real RabbitMQ in a container.
+
 ## Stack
 
 - .NET (ASP.NET Core, background worker), EF Core
-- PostgreSQL (queue via `FOR UPDATE SKIP LOCKED`)
+- PostgreSQL (queue via `FOR UPDATE SKIP LOCKED`), optionally RabbitMQ to announce due deliveries
 - Next.js + TypeScript admin dashboard
 - Docker (one command starts everything), GitHub Actions
-- Later: RabbitMQ transport, SQL Server support, Azure deployment
+- Later: SQL Server support, Azure deployment
 
 ## Layout
 
@@ -334,6 +360,6 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
 - [x] v0.2 CI, API-key auth, SSRF protection, Next.js admin panel, one-command start with Docker Compose
-- [ ] v0.3 RabbitMQ transport ([design](docs/decisions/0010-rabbitmq-transport.md), four steps)
+- [ ] v0.3 RabbitMQ transport ([design](docs/decisions/0010-rabbitmq-transport.md); the code and Compose support are in, the release is next)
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide

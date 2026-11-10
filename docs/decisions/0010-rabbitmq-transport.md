@@ -234,7 +234,7 @@ Each step is its own pull request, in this order, because the first makes the ot
      the relay as a hosted service of the worker, contract tests and broker failure tests against a real RabbitMQ
      (Testcontainers). **Done**, see "What step 3a found" below.
    - **3b, running it.** The Compose service (`--profile rabbitmq`), `.env.example`, the smoke test with
-     `Delivery__Transport=RabbitMq` in CI, the README.
+     `Delivery__Transport=RabbitMq` in CI, the README. **Done**, see "What step 3b found" below.
 4. **Documentation and release.** README, changelog, the failure table checked against what the tests showed,
    `0.3.0`.
 
@@ -341,6 +341,25 @@ and spinning.
 
 **Not done yet** (step 3b): the Compose service, `.env.example`, the smoke test with this transport in CI, and the
 README. Until then the transport can be tried only through the tests or by hand.
+
+## What step 3b found
+
+Written after the fact, like the sections above.
+
+**What was built.** A `rabbitmq` service in Compose behind `--profile rabbitmq` (the management image, version 4.1,
+not published to the host except its management page on `127.0.0.1:15672`), the worker settings
+(`DELIVERY_TRANSPORT`, default `Postgres`), `.env.example`, `scripts/smoke.sh rabbitmq` and a second CI job.
+
+**Run for real, with Docker.** `scripts/smoke.sh` (default transport) and `scripts/smoke.sh rabbitmq` both passed. The
+RabbitMQ run checks, beyond the usual checks, that the worker started the relay, that the broker's own statistics
+show at least one message published to the exchange (so the delivery did not simply bypass the broker), that the work
+and poison queues are empty afterwards, and that nothing of the broker is published except the management page on
+`127.0.0.1`. With an empty `RABBITMQ_PASSWORD` the broker container refuses to start and says what to set (it then
+restarts in a loop, because of the restart policy, with the same message each time).
+
+**Not covered.** The CI job has not run on GitHub yet; it runs the same script. TLS to the broker is a setting that
+has not been exercised against a broker with TLS enabled. Running several worker containers against one broker is
+covered by the integration tests (two consumers on one queue), not by the smoke test.
 
 ## Limits and open questions
 

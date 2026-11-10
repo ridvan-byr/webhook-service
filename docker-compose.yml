@@ -7,6 +7,9 @@
 # computer only. See the README for creating a tenant and signing in.
 #
 # Add --profile demo to also start a small receiver to send webhooks to (see .env.example).
+#
+# Add --profile rabbitmq, with DELIVERY_TRANSPORT=RabbitMq in .env, to hand deliveries to the worker through
+# RabbitMQ instead of having it poll the database (see the README and docs/decisions/0010-rabbitmq-transport.md).
 name: webhook-service
 
 x-service-defaults: &service-defaults
@@ -63,6 +66,13 @@ services:
       target: worker
     environment:
       ConnectionStrings__Default: "Host=postgres;Port=5432;Database=webhooks;Username=webhooks;Password=${POSTGRES_PASSWORD:-webhooks_dev_password}"
+      # Postgres (the default): the worker polls the database. RabbitMq: a relay in the worker announces due
+      # deliveries to the broker below, and the worker acts on the messages.
+      Delivery__Transport: ${DELIVERY_TRANSPORT:-Postgres}
+      # Only read when the transport is RabbitMq. There is no default password: the broker will not start without one.
+      Delivery__RabbitMq__Host: rabbitmq
+      Delivery__RabbitMq__Username: webhooks
+      Delivery__RabbitMq__Password: ${RABBITMQ_PASSWORD:-}
       <<: *delivery-security
     depends_on:
       postgres:
@@ -70,6 +80,10 @@ services:
       # The API creates the tables when it starts; the worker only reads and writes them.
       api:
         condition: service_started
+      # Only when the rabbitmq profile is on. The worker keeps trying to reach the broker anyway.
+      rabbitmq:
+        condition: service_healthy
+        required: false
 
   web:
     <<: *service-defaults
@@ -82,6 +96,37 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - api
+
+  # The message broker for DELIVERY_TRANSPORT=RabbitMq. It is not published to the host: only the other containers
+  # can reach it. The management page is on this computer only (http://127.0.0.1:15672), signed in as "webhooks".
+  rabbitmq:
+    profiles: ["rabbitmq"]
+    # Like postgres, the image starts as root and drops to its own user, so no "cap_drop: ALL" here.
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    image: rabbitmq:4.1-management-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: webhooks
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-}
+    # There is no default password to fall back on, so refuse to start without one instead of creating an account
+    # that has an empty password.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        [ -n "$$RABBITMQ_DEFAULT_PASS" ] || { echo "Set RABBITMQ_PASSWORD in .env (see .env.example)" >&2; exit 1; }
+        exec docker-entrypoint.sh rabbitmq-server
+    ports:
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
 
   # A receiver to try the service against, without leaving this computer. It answers 200 on /ok and 500 on
   # /fail, and prints what it got. Addresses on a private network are refused unless
@@ -98,3 +143,4 @@ services:
 
 volumes:
   pgdata:
+  rabbitmqdata:

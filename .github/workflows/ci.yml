@@ -54,6 +54,20 @@ jobs:
       - name: Build and test the whole service
         run: bash scripts/smoke.sh
 
+  # The same run with deliveries going through RabbitMQ: the broker is started too, the delivery has to arrive, and the
+  # broker has to have seen the message. See docs/decisions/0010-rabbitmq-transport.md.
+  docker-rabbitmq:
+    name: docker compose smoke test (RabbitMQ)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v7
+
+      - name: Build and test the whole service with RabbitMQ
+        run: bash scripts/smoke.sh rabbitmq
+
   web:
     name: web (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
