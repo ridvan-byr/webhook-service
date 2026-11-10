@@ -5,41 +5,52 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-10
+
+### Upgrading
+
+- **Nothing changes unless you ask for it.** `Delivery__Transport` defaults to `Postgres`, which behaves as before.
+  One migration runs on start: a nullable `EnqueuedUntil` column on `deliveries` (existing rows untouched). It is
+  only used by the RabbitMQ transport.
+
 ### Added
 
-- Step 3b: running the RabbitMQ transport. `docker compose --profile rabbitmq` starts a broker (not published to the
-  host; its management page only on 127.0.0.1; no default password, and it refuses to start without one), and
-  `DELIVERY_TRANSPORT=RabbitMq` in `.env` makes the worker use it. `scripts/smoke.sh rabbitmq` and a second CI job
-  check end to end that a delivery goes through the broker and the queues end up empty. README section "Using
-  RabbitMQ". Dependabot does not move RabbitMQ to a new major version on its own.
-- Step 3a of the RabbitMQ plan: the transport itself, **off by default** (`Delivery__Transport=Postgres` is still the
-  default and behaves as before). With `Delivery__Transport=RabbitMq` a relay in the worker announces due deliveries
-  to RabbitMQ with publisher confirms and workers act on the messages. A message carries only a delivery id; the
-  database still decides what may happen, so duplicate, late or invented messages do nothing. Settings under
-  `Delivery__RabbitMq__` (host, port, user, password, TLS, names); there is no default password. Messages that cannot
-  be understood go to a poison queue. Tested against a real RabbitMQ and PostgreSQL, including a broker that is
-  stopped and restarted. Not yet in the Compose file or documented for running ([ADR 0010](docs/decisions/0010-rabbitmq-transport.md),
-  step 3b).
+- **An optional RabbitMQ transport.** `docker compose --profile rabbitmq up -d` starts a broker and
+  `DELIVERY_TRANSPORT=RabbitMq` in `.env` makes the worker use it: a relay in the worker announces due deliveries
+  with publisher confirms, and workers act on the messages. A message carries only a delivery id, never a payload,
+  address or secret; the database stays the source of truth, so a duplicate, late or invented message cannot make
+  anything happen twice. If the broker is down, events are still accepted and are delivered when it returns; setting
+  the transport back to `Postgres` needs no migration. Messages that cannot be understood go to a poison queue.
+  Settings under `Delivery__RabbitMq__` (there is no default password; the broker refuses to start without one; TLS
+  is a setting). The broker is not published to the host; its management page is on `127.0.0.1` only. Design,
+  failure cases and what building it found: [ADR 0010](docs/decisions/0010-rabbitmq-transport.md).
+- Tested against a real RabbitMQ and PostgreSQL in containers: the whole transport contract, a broker that is
+  stopped and restarted, lost messages, two consumers on one queue, and a broker that blocks publishers.
+  `scripts/smoke.sh rabbitmq` and a second CI job check end to end that a delivery goes through the broker.
 - `Delivery__ErrorBackoff` (default 5 seconds, as before): how long the worker waits after a batch failed.
-- Step 2 of the RabbitMQ plan, with no change in behaviour: a nullable `EnqueuedUntil` column on `deliveries` (one
-  migration, existing rows untouched), the lease rules in the delivery model, `Delivery__EnqueueLease` (default two
-  minutes) and `DeliveryEnqueueStore`, which finds due deliveries and puts a lease on them. Nothing announces
-  deliveries yet. ([ADR 0010](docs/decisions/0010-rabbitmq-transport.md), which was corrected where building this
-  showed it to be wrong)
+- `Delivery__EnqueueLease` (default two minutes): how long an announced delivery is left alone before it is announced
+  again.
 
 ### Changed
 
-- Internal: the polling and claiming of due deliveries moved out of the worker into `PostgresDeliverySource`
-  behind a new `IDeliverySource`, the first step towards a RabbitMQ transport
-  ([ADR 0010](docs/decisions/0010-rabbitmq-transport.md)). Behaviour is unchanged apart from the fix below.
+- Internal: the polling and claiming of due deliveries moved out of the worker into `PostgresDeliverySource` behind
+  `IDeliverySource`. Behaviour is unchanged apart from the fix below.
+- Dependabot does not move RabbitMQ to a new major version on its own.
 
 ### Fixed
 
 - Stopping the worker while it was pausing after a failed batch ended its task as cancelled and did not log that it
   had stopped. It now stops cleanly.
 - Documentation: the README and ADR 0001 said the queue is behind an interface. It is not: the `deliveries` table is
-  the queue and the worker claims rows with SQL. Both are corrected, and the work needed to make the transport
-  replaceable (for RabbitMQ) is designed in [ADR 0010](docs/decisions/0010-rabbitmq-transport.md).
+  the queue and the worker claims rows with SQL. Both are corrected.
+
+### Known limits
+
+- RabbitMQ does not make deliveries faster: the relay polls the database at `Delivery__PollInterval` too. The ADR
+  first claimed otherwise and was corrected.
+- While no worker runs, the relay announces each due delivery again every lease, so the queue grows with harmless
+  duplicate messages until a worker returns.
+- TLS to the broker is a setting that has not been exercised against a broker with TLS enabled.
 
 ## [0.2.1] - 2026-11-09
 
@@ -126,6 +137,7 @@ The first release. Everything below is new.
   (see [ADR 0007](docs/decisions/0007-admin-panel.md)).
 - Nothing has been run in production.
 
-[Unreleased]: https://github.com/ridvan-byr/webhook-service/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/ridvan-byr/webhook-service/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ridvan-byr/webhook-service/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/ridvan-byr/webhook-service/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ridvan-byr/webhook-service/releases/tag/v0.2.0
