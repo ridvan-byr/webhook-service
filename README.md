@@ -360,6 +360,6 @@ dotnet tool run dotnet-ef migrations add <Name> --project src/WebhookService.Inf
 
 - [x] v0.1 events, endpoints, signed delivery, retries, delivery history, manual re-send
 - [x] v0.2 CI, API-key auth, SSRF protection, Next.js admin panel, one-command start with Docker Compose
-- [ ] v0.3 RabbitMQ transport ([design](docs/decisions/0010-rabbitmq-transport.md); the code and Compose support are in, the release is next)
+- [x] v0.3 optional RabbitMQ transport ([design and what building it found](docs/decisions/0010-rabbitmq-transport.md))
 - [ ] v0.4 SQL Server support
 - [ ] v0.5 Azure deployment guide

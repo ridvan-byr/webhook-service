@@ -179,8 +179,8 @@ refuses the declaration and the process reports it; nothing is overwritten.
 | Message cannot be published or is not confirmed | The relay gives the leases back and the rows are due again at once. |
 | Receiver is slow or failing | Unchanged: the attempt is recorded and `MarkFailed` schedules the retry in the database. |
 | Malformed message | Dead-lettered, logged once, ignored. |
-| Database unreachable | The relay and consumers fail and retry with a backoff, as the worker does today. |
-| All workers stopped | Nothing is consumed; the rows stay due. |
+| Database unreachable | The relay fails and retries with a backoff, as the worker does today. A consumer that cannot claim a delivery logs it and acknowledges the message (putting it back would spin); the delivery's lease runs out and the relay announces it again. |
+| All workers stopped | Nothing is consumed; the rows stay due. The relay announces each due delivery again every time its lease runs out, so the queue grows by one (harmless) message per due delivery per lease until a worker returns. Tested, and listed under the limits. |
 
 A transport that is down for good stops deliveries when `RabbitMq` is selected; the answer is to switch the setting
 back to `Postgres`, which needs no data migration. That reversibility is part of the design.
@@ -236,7 +236,7 @@ Each step is its own pull request, in this order, because the first makes the ot
    - **3b, running it.** The Compose service (`--profile rabbitmq`), `.env.example`, the smoke test with
      `Delivery__Transport=RabbitMq` in CI, the README. **Done**, see "What step 3b found" below.
 4. **Documentation and release.** README, changelog, the failure table checked against what the tests showed,
-   `0.3.0`.
+   `0.3.0`. **Done**, see "What step 4 found" below.
 
 ## What step 1 found
 
@@ -360,6 +360,23 @@ restarts in a loop, because of the restart policy, with the same message each ti
 **Not covered.** The CI job has not run on GitHub yet; it runs the same script. TLS to the broker is a setting that
 has not been exercised against a broker with TLS enabled. Running several worker containers against one broker is
 covered by the integration tests (two consumers on one queue), not by the smoke test.
+
+## What step 4 found
+
+Written after the fact, like the sections above.
+
+The failure table was checked row by row against the tests. Eight rows hold as written, each backed by a test that
+runs against a real broker (broker unreachable, queue contents lost, duplicate message, consumer dying mid-send,
+relay dying after leasing, message not confirmed, malformed message) or by the shared contract tests (slow or failing
+receiver). Two did not:
+
+- **Database unreachable.** The table said consumers "fail and retry with a backoff". The code acknowledges the
+  message and relies on the lease running out, for the reason given in the table now.
+- **All workers stopped.** The table said nothing is consumed and the rows stay due, which is true, but it left out
+  that the relay keeps announcing them, so the queue grows without bound for as long as no worker runs. The messages
+  are harmless and the database is not affected, but it is a cost of the design. A message time-to-live would remove
+  old announcements but would send them to the poison queue through the dead-letter setting, so it is not a one-line
+  fix; it is left as a known limit. A test pins the behaviour.
 
 ## Limits and open questions
 

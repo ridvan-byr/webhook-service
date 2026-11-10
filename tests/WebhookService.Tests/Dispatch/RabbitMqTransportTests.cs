@@ -131,6 +131,27 @@ public class RabbitMqTransportTests : DeliveryTransportContract
     }
 
     [Fact]
+    public async Task With_no_worker_running_a_delivery_is_announced_again_each_time_its_lease_runs_out()
+    {
+        // Known limit, written down here so it is a decision and not a surprise (ADR 0010): the messages pile up
+        // while nobody consumes, one more per due delivery per lease. They are harmless (a second claim finds
+        // nothing to do) but they do take room in the queue.
+        var (h, broker) = await StartAsync();
+        await using var _ = h;
+        await h.SeedAsync("http://unused.example/1");
+
+        await h.Relay.RelayOnceAsync(default);
+        h.Clock.Advance(TimeSpan.FromMinutes(2));
+        await h.Relay.RelayOnceAsync(default);
+        h.Clock.Advance(TimeSpan.FromMinutes(2));
+        await h.Relay.RelayOnceAsync(default);
+
+        await using var raw = await _broker.OpenRawConnectionAsync(broker);
+        await using var channel = await raw.CreateChannelAsync();
+        Assert.Equal(3u, (await channel.QueueDeclarePassiveAsync(broker.Queue)).MessageCount);
+    }
+
+    [Fact]
     public async Task A_delivery_that_a_polling_worker_took_first_is_not_attempted_again_when_its_message_arrives()
     {
         await using var receiver = await TestReceiver.StartAsync();
