@@ -18,18 +18,21 @@ public sealed class DeliveryRelay
     private readonly DeliveryEnqueueStore _store;
     private readonly IDeliveryPublisher _publisher;
     private readonly DeliveryOptions _options;
+    private readonly DeliveryMetrics _metrics;
     private readonly ILogger<DeliveryRelay> _logger;
 
     public DeliveryRelay(
         DeliveryEnqueueStore store,
         IDeliveryPublisher publisher,
         IOptions<DeliveryOptions> options,
+        DeliveryMetrics metrics,
         ILogger<DeliveryRelay> logger)
     {
         _store = store;
         _publisher = publisher;
         _options = options.Value;
         _options.EnsureValid();
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -96,6 +99,7 @@ public sealed class DeliveryRelay
 
             _logger.LogError(ex, "{Count} deliveries could not be announced. They will be tried again.", ids.Count);
             await ReleaseAsync(ids);
+            _metrics.RelayPass(ids.Count, ids.Count);
             return new RelayResult(ids.Count, ids.Count);
         }
 
@@ -108,6 +112,7 @@ public sealed class DeliveryRelay
             await ReleaseAsync(unconfirmed);
         }
 
+        _metrics.RelayPass(ids.Count, unconfirmed.Count);
         return new RelayResult(ids.Count, unconfirmed.Count);
     }
 

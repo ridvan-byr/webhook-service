@@ -69,6 +69,9 @@ services:
       # Postgres (the default): the worker polls the database. RabbitMq: a relay in the worker announces due
       # deliveries to the broker below, and the worker acts on the messages.
       Delivery__Transport: ${DELIVERY_TRANSPORT:-Postgres}
+      # How much one worker takes on at a time (the defaults are 20 and 8).
+      Delivery__BatchSize: ${DELIVERY_BATCH_SIZE:-20}
+      Delivery__MaxParallelism: ${DELIVERY_MAX_PARALLELISM:-8}
       # Only read when the transport is RabbitMq. There is no default password: the broker will not start without one.
       Delivery__RabbitMq__Host: rabbitmq
       Delivery__RabbitMq__Username: webhooks
@@ -139,6 +142,8 @@ services:
     working_dir: /demo
     volumes:
       - ./demo:/demo:ro
+    environment:
+      LOG_REQUESTS: ${DEMO_LOG_REQUESTS:-true}
     command: ["node", "receiver.js"]
 
 volumes:

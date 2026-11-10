@@ -31,18 +31,21 @@ public sealed class RabbitMqDeliverySource : IDeliverySource
     private readonly RabbitMqConnection _connection;
     private readonly DeliveryClaimStore _claims;
     private readonly DeliveryOptions _options;
+    private readonly DeliveryMetrics _metrics;
     private readonly ILogger<RabbitMqDeliverySource> _logger;
 
     public RabbitMqDeliverySource(
         RabbitMqConnection connection,
         DeliveryClaimStore claims,
         IOptions<DeliveryOptions> options,
+        DeliveryMetrics metrics,
         ILogger<RabbitMqDeliverySource> logger)
     {
         _connection = connection;
         _claims = claims;
         _options = options.Value;
         _options.EnsureValid();
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -80,6 +83,16 @@ public sealed class RabbitMqDeliverySource : IDeliverySource
     /// cancelled in the middle of a delivery: then the message must not be acknowledged, so that another worker gets it.
     /// </summary>
     public async Task<MessageOutcome> HandleMessageAsync(
+        ReadOnlyMemory<byte> body,
+        Func<DeliveryClaim, CancellationToken, Task> handle,
+        CancellationToken ct)
+    {
+        var outcome = await HandleCoreAsync(body, handle, ct);
+        _metrics.MessageHandled(outcome);
+        return outcome;
+    }
+
+    private async Task<MessageOutcome> HandleCoreAsync(
         ReadOnlyMemory<byte> body,
         Func<DeliveryClaim, CancellationToken, Task> handle,
         CancellationToken ct)

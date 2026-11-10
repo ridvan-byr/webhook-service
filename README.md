@@ -129,6 +129,8 @@ docker compose --profile rabbitmq up -d --build
 - The broker is not published to the host. Its management page is on `http://127.0.0.1:15672` (user `webhooks`, your
   password) and only on this computer. There is no default password; the broker refuses to start without one. Outside
   a single machine, turn on TLS (`Delivery__RabbitMq__UseTls=true`).
+- How fast it is, compared with the database transport and measured on one machine, is in
+  [docs/performance.md](docs/performance.md). Short version: it is not faster.
 - The design, the failure cases and what building it found are in
   [ADR 0010](docs/decisions/0010-rabbitmq-transport.md). `scripts/smoke.sh rabbitmq` runs the end-to-end check, and
   the unit and integration tests run against a real RabbitMQ in a container.

@@ -49,6 +49,10 @@ public static class DeliveryServiceCollectionExtensions
                 ConnectCallback = serviceProvider.GetRequiredService<SafeConnector>().ConnectAsync,
             });
 
+        // The .NET metrics API; the factory is what lets a test see only its own numbers.
+        services.AddMetrics();
+        services.AddSingleton<DeliveryMetrics>();
+
         services.AddSingleton<DeliveryProcessor>();
 
         // Where the work comes from. The polling source needs nothing but the database. It is registered as

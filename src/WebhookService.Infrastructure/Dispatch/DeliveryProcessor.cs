@@ -19,6 +19,7 @@ public sealed class DeliveryProcessor
     private readonly TimeProvider _time;
     private readonly IJitter _jitter;
     private readonly RetryPolicy _retryPolicy;
+    private readonly DeliveryMetrics _metrics;
     private readonly ILogger<DeliveryProcessor> _logger;
 
     public DeliveryProcessor(
@@ -27,6 +28,7 @@ public sealed class DeliveryProcessor
         TimeProvider time,
         IJitter jitter,
         IOptions<DeliveryOptions> options,
+        DeliveryMetrics metrics,
         ILogger<DeliveryProcessor> logger)
     {
         _dbFactory = dbFactory;
@@ -35,6 +37,7 @@ public sealed class DeliveryProcessor
         _jitter = jitter;
         options.Value.EnsureValid();
         _retryPolicy = options.Value.ToRetryPolicy();
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -47,6 +50,8 @@ public sealed class DeliveryProcessor
         var endpoint = await db.Endpoints.AsNoTracking().SingleAsync(e => e.Id == delivery.EndpointId, ct);
 
         var startedAt = _time.GetUtcNow();
+        // How long it has been due. A retry is measured from when the retry was due, not from when the delivery was made.
+        var pickupDelayMs = (startedAt - delivery.NextAttemptAt).TotalMilliseconds;
         var result = endpoint.IsActive
             ? await _sender.SendAsync(endpoint.Url, endpoint.SigningSecret, delivery.EventId, ev.PayloadJson, ct)
             : new SendResult(null, null, "Endpoint is inactive.", 0);
@@ -60,6 +65,7 @@ public sealed class DeliveryProcessor
                 "Delivery {DeliveryId} was taken over by another worker during attempt {Attempt}; result discarded.",
                 claim.DeliveryId,
                 claim.AttemptNumber);
+            _metrics.AttemptDiscarded();
             return;
         }
 
@@ -77,6 +83,13 @@ public sealed class DeliveryProcessor
         }
 
         await db.SaveChangesAsync(ct);
+
+        _metrics.AttemptFinished(
+            result.IsSuccess ? DeliveryMetrics.Outcomes.Succeeded
+                : delivery.Status == DeliveryStatus.Dead ? DeliveryMetrics.Outcomes.Dead
+                : DeliveryMetrics.Outcomes.Failed,
+            result.DurationMs,
+            pickupDelayMs);
 
         _logger.LogInformation(
             "Delivery {DeliveryId} attempt {Attempt}: {Outcome} ({Status})",

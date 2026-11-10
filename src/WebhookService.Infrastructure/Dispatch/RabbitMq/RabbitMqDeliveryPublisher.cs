@@ -54,52 +54,59 @@ public sealed class RabbitMqDeliveryPublisher : IDeliveryPublisher
         IReadOnlyList<Guid> deliveryIds,
         CancellationToken ct)
     {
+        // All of them are sent at once and then awaited together. Waiting for each confirm before sending the next
+        // costs one round trip to the broker (and, for a durable quorum queue, one write to disk) per message; sent
+        // together, the broker confirms them in groups. The first version did it one by one and delivered about a
+        // quarter as many deliveries per second as the database transport (see docs/performance.md).
+        var attempts = deliveryIds.Select(id => PublishOneAsync(channel, options, id, ct)).ToList();
+        var errors = await Task.WhenAll(attempts);
+
         var failed = new List<Guid>();
-        var published = 0;
         Exception? firstError = null;
-
-        foreach (var id in deliveryIds)
+        for (var i = 0; i < errors.Length; i++)
         {
-            if (firstError is not null && firstError is not PublishException)
+            if (errors[i] is { } error)
             {
-                // The channel or connection is gone: asking again for each remaining message would only wait.
-                failed.Add(id);
-                continue;
-            }
-
-            try
-            {
-                // The time limit is enforced here and not only handed to the client: a broker that has blocked its
-                // publishers (for example because it is out of memory) does not react to a cancelled token, and the
-                // relay would wait for ever.
-                await channel.BasicPublishAsync(
-                    exchange: options.Exchange,
-                    routingKey: options.Queue,
-                    mandatory: true,
-                    basicProperties: new BasicProperties { Persistent = true, ContentType = "application/json" },
-                    body: DeliveryMessage.Create(id),
-                    cancellationToken: ct).AsTask().WaitAsync(options.PublishTimeout, ct);
-                published++;
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                // Includes our own timeout: a broker that does not answer is a broker that did not confirm.
-                firstError ??= ex;
-                failed.Add(id);
-                _logger.LogWarning(ex, "Delivery {DeliveryId} was not confirmed by the broker.", id);
+                firstError ??= error;
+                failed.Add(deliveryIds[i]);
+                _logger.LogWarning(error, "Delivery {DeliveryId} was not confirmed by the broker.", deliveryIds[i]);
             }
         }
 
-        if (published == 0 && firstError is not null)
+        if (failed.Count == deliveryIds.Count && firstError is not null)
         {
             // Nothing got through: tell the relay the broker could not be used, rather than listing every id.
             throw firstError;
         }
 
         return failed;
+    }
+
+    /// <returns>Null when the broker confirmed the message, otherwise why it did not.</returns>
+    private static async Task<Exception?> PublishOneAsync(IChannel channel, RabbitMqOptions options, Guid id, CancellationToken ct)
+    {
+        try
+        {
+            // The time limit is enforced here and not only handed to the client: a broker that has blocked its
+            // publishers (for example because it is out of memory) does not react to a cancelled token, and the
+            // relay would wait for ever.
+            await channel.BasicPublishAsync(
+                exchange: options.Exchange,
+                routingKey: options.Queue,
+                mandatory: true,
+                basicProperties: new BasicProperties { Persistent = true, ContentType = "application/json" },
+                body: DeliveryMessage.Create(id),
+                cancellationToken: ct).AsTask().WaitAsync(options.PublishTimeout, ct);
+            return null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Includes our own timeout: a broker that does not answer is a broker that did not confirm.
+            return ex;
+        }
     }
 }

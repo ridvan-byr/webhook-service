@@ -378,6 +378,21 @@ receiver). Two did not:
   old announcements but would send them to the poison queue through the dead-letter setting, so it is not a one-line
   fix; it is left as a known limit. A test pins the behaviour.
 
+## What the load test found
+
+Written after the fact, like the sections above. The numbers and how they were taken are in
+[docs/performance.md](../performance.md).
+
+- **The relay was too slow, and nothing but a measurement showed it.** It published the messages of a batch one
+  after another, each waiting for its confirm. With the default settings it delivered about 134 per second against 462
+  for the polling transport. Publishing the whole batch at once and awaiting the confirms together brought it to about
+  280, and to the polling transport's level when workers take more at a time.
+- **The latency claim is now measured, not only argued.** Below the rate a worker can deliver, a delivery waits the same
+  with both transports (about half a second on average, up to about a second), because the relay polls the database at
+  the same `PollInterval`. RabbitMQ does not shorten the wait.
+- The reasons for the broker stay as this document gave them: one poller in place of many, decoupling, and being a
+  transport teams already run. Speed is not among them.
+
 ## Limits and open questions
 
 - **Ordering is not preserved** and never was: concurrent workers and retries reorder deliveries to one endpoint.
