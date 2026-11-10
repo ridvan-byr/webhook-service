@@ -11,6 +11,8 @@ const http = require("node:http");
 
 const PORT = Number(process.env.PORT ?? 9000);
 const MAX_BODY = 1_000_000;
+// Printing every request is what you want when trying the service and the slowest part of a load test.
+const LOG_REQUESTS = process.env.LOG_REQUESTS !== "false";
 
 const server = http.createServer((request, response) => {
   let size = 0;
@@ -23,7 +25,7 @@ const server = http.createServer((request, response) => {
 
   request.on("end", () => {
     const body = Buffer.concat(chunks).toString("utf8");
-    console.log(
+    if (LOG_REQUESTS) console.log(
       JSON.stringify({
         at: new Date().toISOString(),
         method: request.method,

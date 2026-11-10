@@ -5,6 +5,25 @@ and the project uses [Semantic Versioning](https://semver.org/). Before 1.0 anyt
 
 ## [Unreleased]
 
+### Added
+
+- Metrics from the worker, with the .NET metrics API (no new package): attempts by outcome, attempt duration, how long
+  a delivery waited after it was due (`webhook.delivery.pickup.delay`), and for RabbitMQ what the relay announced and
+  what became of each message. Tags never carry an id, an address or a tenant. See [docs/performance.md](docs/performance.md).
+- `scripts/loadtest.sh` and `scripts/loadtest.mjs`: a load test that runs the whole stack with either transport and
+  reads the result from the service's own timestamps. The first results are in [docs/performance.md](docs/performance.md).
+- `DELIVERY_BATCH_SIZE` and `DELIVERY_MAX_PARALLELISM` in the Compose file (the defaults are unchanged: 20 and 8).
+- `LOG_REQUESTS=false` for the demo receiver.
+
+### Changed
+
+- **The RabbitMQ relay publishes a batch at once instead of one message at a time**, and waits for the confirms
+  together. The load test showed the one-by-one version delivered about 134 messages per second against 462 for the
+  database transport (a durable queue confirms after a disk write, so every message cost a round trip). It now
+  reaches about 280 with the default settings and about the same as the database transport when the worker takes more
+  at a time. RabbitMQ does not make deliveries faster than the database transport; that is measured now, not only
+  argued.
+
 ## [0.3.0] - 2026-11-10
 
 ### Upgrading
