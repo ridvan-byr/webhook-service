@@ -22,7 +22,7 @@
     "audit:prod": "npm audit --omit=dev --audit-level=moderate"
   },
   "dependencies": {
-    "next": "16.4.5",
+    "next": "16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "server-only": "^0.0.1"
@@ -38,7 +38,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "axe-core": "^4.14.0",
     "eslint": "^9",
-    "eslint-config-next": "16.4.5",
+    "eslint-config-next": "16.4.6",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "jsdom": "25.0.1",
     "tailwindcss": "4.3.3",
